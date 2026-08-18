@@ -1,0 +1,793 @@
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Sistema Híbrido de Compras Corporativas</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    
+    <!-- Conectores oficiais do Google Firebase Firestore -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+    
+    <style>
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background-color: #f8fafc; margin: 0; overflow: hidden;}
+        .layout-wrapper { display: flex; height: 100vh; width: 100vw; overflow: hidden; }
+        .sidebar { width: 260px; background-color: #0f172a; color: #f1f5f9; display: flex; flex-direction: column; overflow-y: auto;}
+        .main-content { flex: 1; display: flex; flex-direction: column; overflow-y: auto; background-color: #f8fafc; }
+        
+        .nav-item { padding: 10px 16px; margin: 4px 12px; border-radius: 6px; cursor: pointer; transition: all 0.2s; font-size: 0.9rem; font-weight: 500; display: flex; align-items: center; justify-content: space-between;}
+        .nav-item:hover { background-color: #1e293b; }
+        .nav-item.active { background-color: #2563eb; color: white; font-weight: 600; box-shadow: 0 2px 4px rgba(37,99,235,0.2); }
+        
+        .table-input { width: 100%; border-collapse: collapse; }
+        .table-input th { position: sticky; top: 0; background-color: #1e293b; color: white; padding: 10px; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px; z-index: 10; border: 1px solid #334155;}
+        .table-input td { padding: 6px 10px; border: 1px solid #e2e8f0; background: white; vertical-align: middle; }
+        .table-input input { width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 0.85rem; }
+        
+        .toggle-switch { position: relative; display: inline-block; width: 36px; height: 20px; }
+        .toggle-switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #cbd5e1; transition: .3s; border-radius: 20px; }
+        .slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 2px; bottom: 2px; background-color: white; transition: .3s; border-radius: 50%; }
+        input:checked + .slider { background-color: #2563eb; }
+        input:checked + .slider:before { transform: translateX(16px); }
+
+        .item-disabled td { background-color: #f1f5f9 !important; opacity: 0.5; }
+        .table-container { max-height: 100%; overflow-y: auto; }
+
+        @media print {
+            .no-print, .sidebar { display: none !important; }
+            .layout-wrapper { display: block; height: auto; overflow: visible; }
+            .main-content { overflow: visible; background: white; padding: 0 !important; }
+            @page { size: A4 landscape; margin: 5mm; }
+            body { font-size: 7.5pt !important; background: white; color: black; }
+            
+            .print-card-grid { display: flex !important; flex-direction: row !important; gap: 10px !important; margin-bottom: 10px !important; }
+            .print-card { flex: 1; border: 1px solid #cbd5e1 !important; padding: 8px !important; border-radius: 4px !important; }
+
+            .table-input { font-size: 7.5pt !important; border: 1px solid #000 !important; }
+            .table-input th { background-color: #0f172a !important; color: #ffffff !important; border: 1px solid #000 !important; padding: 5px !important; font-size: 7.5pt !important; }
+            .table-input td { padding: 5px 6px !important; border: 1px solid #cbd5e1 !important; background: #fff !important; color: #000 !important;}
+            tr { page-break-inside: avoid !important; }
+        }
+    </style>
+</head>
+<body>
+<div id="app" class="layout-wrapper">
+    
+    <!-- SIDEBAR -->
+    <div class="sidebar no-print">
+        <div class="p-5 border-b border-slate-700">
+            <h1 class="text-lg font-bold text-white flex items-center gap-2"><i class="fa-solid fa-boxes-stacked text-blue-500"></i>Gestor Compras</h1>
+            <p class="text-[10px] text-slate-400 mt-1 uppercase tracking-wider">Módulos do Sistema</p>
+        </div>
+        
+        <div class="p-3 flex-1 flex flex-col justify-between">
+            <div>
+                <div class="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-2 pl-3">Geral</div>
+                <div class="nav-item" :class="{'active': activeTab === 'materiais'}" @click="activeTab = 'materiais'">
+                    <span><i class="fa-solid fa-list-check w-5"></i> Lista de Materiais</span>
+                </div>
+                
+                <div class="text-[10px] text-slate-500 font-bold uppercase tracking-wider mt-6 mb-2 pl-3">Fornecedores</div>
+                <div v-for="(sup, idx) in suppliers" :key="idx" class="nav-item group" :class="{'active': activeTab === sup}" @click="activeTab = sup">
+                    <span><i class="fa-solid fa-store w-5"></i> {{ sup }}</span>
+                    <button @click.stop="removeSupplier(idx)" class="text-slate-400 opacity-0 group-hover:opacity-100 hover:text-red-400 transition"><i class="fa-solid fa-trash-can"></i></button>
+                </div>
+                
+                <div class="mt-2 px-3 flex gap-2">
+                    <input v-model="newSupplier" @keyup.enter="addSupplier" placeholder="Novo Fornecedor" class="w-full bg-slate-800 border border-slate-600 rounded text-xs px-2 py-1.5 text-white focus:outline-none">
+                    <button @click="addSupplier" class="bg-blue-600 hover:bg-blue-50 text-white rounded px-2"><i class="fa-solid fa-plus"></i></button>
+                </div>
+
+                <div class="text-[10px] text-slate-500 font-bold uppercase tracking-wider mt-6 mb-2 pl-3">Análise</div>
+                <div class="nav-item bg-emerald-900/40 text-emerald-400 hover:bg-emerald-900/60" :class="{'bg-emerald-600 text-white hover:bg-emerald-600': activeTab === 'relatorio'}" @click="activeTab = 'relatorio'">
+                    <span><i class="fa-solid fa-chart-pie w-5"></i> Relatório Final</span>
+                </div>
+            </div>
+
+            <!-- GERENCIADOR DE ORÇAMENTOS (NUVEM) -->
+            <div class="border-t border-slate-700 pt-4 mt-auto px-3 flex flex-col gap-3 pb-2">
+                
+                <div>
+                    <label class="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Nome do Orçamento (Salvar):</label>
+                    <div class="flex gap-2">
+                        <input v-model="projectName" placeholder="Ex: Projeto Fabrica..." class="w-full bg-slate-800 border border-slate-600 rounded text-xs px-2 py-2 text-white focus:outline-none focus:border-blue-500">
+                        <button @click="syncToCloud" :disabled="isSyncing" class="bg-blue-600 hover:bg-blue-700 text-white rounded text-xs px-3 py-2 font-bold transition flex items-center justify-center" title="Salvar Projeto na Nuvem">
+                            <i class="fa-solid" :class="isSyncing ? 'fa-spinner fa-spin' : 'fa-cloud-arrow-up'"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">Carregar da Nuvem:</label>
+                    <div class="flex gap-2">
+                        <select v-model="selectedLoadProject" @focus="fetchProjectsList" class="w-full bg-slate-800 border border-slate-600 rounded text-xs px-2 py-2 text-white focus:outline-none focus:border-blue-500 appearance-none">
+                            <option value="" disabled>Selecione um projeto...</option>
+                            <option v-for="proj in savedProjectsList" :key="proj" :value="proj">{{ proj }}</option>
+                        </select>
+                        <button @click="loadFromCloud" class="bg-slate-600 hover:bg-slate-500 text-white rounded text-xs px-3 py-2 font-bold transition flex items-center justify-center" title="Carregar Projeto da Nuvem">
+                            <i class="fa-solid fa-cloud-arrow-down"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <button @click="clearAndResetSystem" class="w-full mt-2 bg-red-600/20 hover:bg-red-600/40 text-red-400 hover:text-red-300 rounded text-xs py-2 font-bold transition flex items-center justify-center gap-2 border border-red-500/30">
+                    <i class="fa-solid fa-file-circle-plus"></i> Novo Orçamento (Zerar)
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MAIN CONTENT -->
+    <div class="main-content p-6">
+        
+        <!-- MATERIAIS -->
+        <div v-show="activeTab === 'materiais'" class="no-print h-full flex flex-col">
+            <div class="flex justify-between items-center mb-6">
+                <div>
+                    <h2 class="text-2xl font-bold text-slate-800">Lista de Materiais do Projeto</h2>
+                </div>
+                <button @click="addItem" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg font-bold"><i class="fa-solid fa-plus mr-2"></i> Adicionar Produto</button>
+            </div>
+            <div class="flex-1 bg-white rounded-xl shadow-sm border overflow-y-auto table-container">
+                <table class="table-input w-full">
+                    <thead>
+                        <tr>
+                            <th class="w-16 text-center">Comprar</th>
+                            <th class="w-24">Cód.</th>
+                            <th>Descrição</th>
+                            <th class="w-24 text-center">Qtd</th>
+                            <th class="w-20 text-center">Unid</th>
+                            <th class="w-16 text-center">Excluir</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="(item, idx) in items" :key="idx" :class="{'item-disabled': !item.selected}">
+                            <td class="text-center"><label class="toggle-switch"><input type="checkbox" v-model="item.selected"><span class="slider"></span></label></td>
+                            <td><input v-model="item.id"></td>
+                            <td><input v-model="item.desc"></td>
+                            <td><input type="number" v-model="item.qty" class="text-center font-bold text-blue-700"></td>
+                            <td><input v-model="item.unid" class="text-center uppercase"></td>
+                            <td class="text-center"><button @click="removeItem(idx)" class="text-red-400 hover:text-red-600"><i class="fa-solid fa-trash-can"></i></button></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- FORNECEDORES -->
+        <template v-for="sup in suppliers" :key="sup">
+            <div v-show="activeTab === sup" class="no-print h-full flex flex-col">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-2xl font-bold text-slate-800">Orçamentos: <span class="text-blue-600">{{ sup }}</span></h2>
+                    <label class="flex items-center gap-2 text-sm font-bold bg-white border px-4 py-2 rounded-lg cursor-pointer"><input type="checkbox" v-model="hideInactiveSup[sup]"> Ocultar Não Cotados</label>
+                </div>
+                <div class="flex-1 bg-white rounded-xl shadow-sm border overflow-y-auto table-container">
+                    <table class="table-input w-full">
+                        <thead>
+                            <tr>
+                                <th class="w-16 text-center bg-blue-950">Cotar?</th>
+                                <th class="w-20">Cód.</th>
+                                <th>Produto</th>
+                                <th class="w-20 text-center">Qtd</th>
+                                <th class="w-32 bg-blue-900 text-center">Preço (R$)</th>
+                                <th class="w-24 bg-blue-900 text-center">Estoque</th>
+                                <th class="w-24 bg-blue-900 text-center">Prazo (Dias)</th>
+                                <th class="w-1/4 bg-blue-900">Marca / Modelo</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="item in items.filter(i => i.selected)" v-show="!hideInactiveSup[sup] || item.offers[sup].active" :class="{'item-disabled': !item.offers[sup].active}">
+                                <td class="text-center"><label class="toggle-switch"><input type="checkbox" v-model="item.offers[sup].active"><span class="slider"></span></label></td>
+                                <td>{{ item.id }}</td><td>{{ item.desc }}</td><td class="text-center font-bold">{{ item.qty }}</td>
+                                <td class="bg-blue-50/50"><input type="number" step="0.01" v-model="item.offers[sup].price" :disabled="!item.offers[sup].active" class="text-right font-bold text-blue-800"></td>
+                                <td class="bg-blue-50/50"><input type="number" v-model="item.offers[sup].stock" :disabled="!item.offers[sup].active" class="text-center font-bold text-green-700"></td>
+                                <td class="bg-blue-50/50"><input type="number" v-model="item.offers[sup].prazo" :disabled="!item.offers[sup].active" class="text-center font-bold text-amber-700"></td>
+                                <td class="bg-blue-50/50"><input v-model="item.offers[sup].brand" :disabled="!item.offers[sup].active"></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </template>
+
+        <!-- RELATORIO -->
+        <div v-show="activeTab === 'relatorio'" class="h-full flex flex-col">
+            <div class="flex flex-col xl:flex-row justify-between gap-4 mb-6 no-print bg-white p-5 rounded-xl border shadow-sm">
+                <div class="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Estratégia de Decisão</label>
+                        <select v-model="strategy" class="w-full border rounded px-3 py-2 text-sm font-bold text-slate-700 outline-none">
+                            <option value="prazo_min">🚀 MAIS RÁPIDO (Menor Prazo -> Preço)</option>
+                            <option value="preco_min">💰 MAIS BARATO (Menor Preço -> Prazo)</option>
+                            <option value="prazo_max">🐢 MAIS DEMORADO (Maior Prazo -> Preço)</option>
+                            <option value="preco_max">💸 MAIS CARO (Maior Preço -> Prazo)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Visualizar Fornecedor</label>
+                        <select v-model="supplierFilter" class="w-full border rounded px-3 py-2 text-sm font-bold text-slate-700 outline-none">
+                            <option value="ALL">Mostrar Todos (Visão Geral)</option>
+                            <option v-for="sup in suppliers" :key="'f-'+sup" :value="sup">Apenas itens ganhos por: {{ sup }}</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Organizar Tabela Por</label>
+                        <select v-model="sortBy" class="w-full border rounded px-3 py-2 text-sm font-bold text-slate-700 outline-none">
+                            <option value="default">Ordem da Lista Original</option>
+                            <option value="qty_desc">Maior Quantidade Solicitada</option>
+                            <option value="cost_asc">Menor Custo do Lote</option>
+                            <option value="cost_desc">Maior Custo do Lote</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="flex gap-2 items-end mt-4 xl:mt-0">
+                    <button @click="exportExcel" :disabled="isExporting" class="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2.5 rounded-lg font-bold shadow-sm">
+                        <i class="fa-solid" :class="isExporting ? 'fa-spinner fa-spin' : 'fa-file-excel'"></i> 
+                        <span class="ml-2">{{ isExporting ? 'Gerando...' : 'Exportar Modelo Padrão' }}</span>
+                    </button>
+                    <button onclick="window.print()" class="bg-slate-800 hover:bg-slate-900 text-white px-6 py-2.5 rounded-lg font-bold shadow-sm"><i class="fa-solid fa-print mr-2"></i> Imprimir PDF</button>
+                </div>
+            </div>
+
+            <!-- CARDS DE RESUMO -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4 print-card-grid">
+                <div class="bg-white p-4 rounded-xl border border-l-4 border-l-blue-600 print-card shadow-sm"><div class="text-[10px] text-slate-500 font-bold uppercase mb-1">Custo Total Projetado</div><div class="text-2xl font-black text-slate-800">{{ formatMoney(filteredGrandTotal) }}</div></div>
+                <div class="bg-white p-4 rounded-xl border border-l-4 border-l-emerald-500 print-card shadow-sm"><div class="text-[10px] text-slate-500 font-bold uppercase mb-1">Itens Resolvidos</div><div class="text-2xl font-black text-slate-800">{{ filteredAnalysis.filter(a => a.item.selected && a.unfulfilled === 0).length }}</div></div>
+                <div class="bg-white p-4 rounded-xl border border-l-4 border-l-red-500 print-card shadow-sm"><div class="text-[10px] text-slate-500 font-bold uppercase mb-1">Itens c/ Pendência</div><div class="text-2xl font-black text-red-600">{{ filteredAnalysis.filter(a => a.item.selected && a.unfulfilled > 0).length }}</div></div>
+            </div>
+
+            <!-- TABELA HTML MODELO ANTIGO LIMPO (IGUAL AO PRINT image_3d9a05.png) -->
+            <div class="flex-1 bg-white rounded-xl border overflow-y-auto table-container shadow-sm">
+                <div class="hidden print-header p-5 border-b bg-slate-800 text-white">
+                    <h1 class="text-2xl font-bold mb-1">Plano de Compras: {{ projectName }}</h1>
+                    <p class="text-xs text-slate-300">
+                        <span v-if="supplierFilter !== 'ALL'">Fornecedor Filtrado: {{ supplierFilter }} | </span>
+                        Estratégia: {{ strategyLabel }}
+                    </p>
+                </div>
+                <table class="table-input w-full">
+                    <thead>
+                        <tr class="bg-slate-900 text-white text-xs">
+                            <th class="w-16 text-center">CÓD</th>
+                            <th>DESCRIÇÃO DO MATERIAL</th>
+                            <th class="w-16 text-center">QTD</th>
+                            <th>COMPOSIÇÃO DA COMPRA</th>
+                            <th class="w-24 text-center">PRAZO LOTE</th>
+                            <th class="w-32 text-right">CUSTO LOTE</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="res in filteredAnalysis" :key="res.item.id" v-show="res.item.selected">
+                            <td class="text-center font-bold text-slate-500">{{ res.item.id }}</td>
+                            <td class="font-medium text-slate-900">{{ res.item.desc }}</td>
+                            <td class="text-center">
+                                <div class="font-black text-base text-blue-700">{{ res.item.qty }}</div>
+                                <div class="text-[9px] font-bold text-slate-400 uppercase">{{ res.item.unid }}</div>
+                            </td>
+                            
+                            <td class="p-3">
+                                <div v-if="res.fulfilled.length === 0" class="text-red-500 font-bold text-xs">Nenhuma cotação aprovada.</div>
+                                <div class="flex flex-col gap-1.5">
+                                    <div v-for="(f, i) in res.fulfilled" :key="i" class="text-xs text-slate-700 bg-slate-50 p-2 border border-slate-200 rounded">
+                                        <span class="bg-slate-800 text-white font-bold px-1.5 py-0.5 rounded mr-1">{{ f.qty }}x</span>
+                                        <span class="font-bold text-blue-600 uppercase">{{ f.supplier }}</span> 
+                                        <span class="text-slate-500">({{ f.prazo === 0 ? 'Imediato' : f.prazo + ' dias' }})</span>
+                                        <span class="font-semibold text-slate-800 ml-1">@ {{ formatMoney(f.price) }}</span>
+                                        <div class="text-[10px] text-slate-400 font-medium mt-1" v-if="f.brand"><b>Ref:</b> {{ f.brand }}</div>
+                                    </div>
+                                </div>
+                                <div v-if="res.unfulfilled > 0 && supplierFilter === 'ALL'" class="text-[10px] text-red-600 mt-1 font-bold bg-red-50 p-1 rounded inline-block border border-red-100">Faltam {{ res.unfulfilled }} unidades.</div>
+                            </td>
+                            
+                            <td class="text-center font-bold">
+                                <span v-if="res.fulfilled.length > 0" :class="res.maxPrazo === 0 ? 'text-green-600' : 'text-slate-700'">
+                                    {{ res.maxPrazo === 0 ? 'Imediato' : res.maxPrazo + 'd' }}
+                                </span>
+                                <span v-else>-</span>
+                            </td>
+                            
+                            <td class="text-right font-black text-slate-900 text-base">{{ formatMoney(res.totalCost) }}</td>
+                        </tr>
+                        
+                        <tr class="bg-slate-900 text-white font-black">
+                            <td colspan="5" class="p-4 text-right text-sm uppercase tracking-wider">CUSTO TOTAL PROJETADO:</td>
+                            <td class="p-4 text-right text-lg text-emerald-400 font-black">{{ formatMoney(filteredGrandTotal) }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Conexão oficial do Firebase com o projeto compras-27554
+    const firebaseConfig = {
+        apiKey: "AIzaSyBGsRzQEEVBGKc2uxuy-5PR69i9QpLFqus",
+        authDomain: "compras-27554.firebaseapp.com",
+        projectId: "compras-27554",
+        storageBucket: "compras-27554.firebasestorage.app",
+        messagingSenderId: "788791572845",
+        appId: "1:788791572845:web:91ec0b5b148070bb178264"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+
+    const DEFAULT_DATA = {"suppliers": ["CETTI", "UNIVERSO", "DIMENSIONAL", "THERBA", "NORTEL"], "items": [{"id": "1001", "desc": "Quadro de comando 500x500x200 - com placa de montagem", "qty": 3.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "UNIVERSO": {"price": 1687.73, "stock": 0.0, "prazo": 37.0, "brand": "MARCA NÃO INFORMADA | REF. NSYCRN55250"}, "DIMENSIONAL": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "THERBA": {"price": 350.89, "stock": 3.0, "prazo": 0.0, "brand": "MARCA NÃO INFORMADA | QUADRO DE COMANDO SOBREPOR 500X500X250"}, "NORTEL": {"price": 1250.69, "stock": 0.0, "prazo": 31.0, "brand": "SCHNEIDER | REF. NSYCRN55250"}}}, {"id": "1002", "desc": "Quadro de comando 400x400x200 - com placa de montagem", "qty": 33.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": 224.7, "stock": 20.0, "prazo": 0.0, "brand": "MARCA NÃO INFORMADA | REF. QSS-442"}, "UNIVERSO": {"price": 976.04, "stock": 0.0, "prazo": 37.0, "brand": "MARCA NÃO INFORMADA | REF. NSYCRN44200PM"}, "DIMENSIONAL": {"price": 726.75, "stock": 0.0, "prazo": 24.0, "brand": "SCHNEIDER | REF. NSYCRN44200PM"}, "THERBA": {"price": 234.82, "stock": 0.0, "prazo": 10.0, "brand": "MARCA NÃO INFORMADA | QUADRO DE COMANDO SOBREPOR 400X400X200"}, "NORTEL": {"price": 640.46, "stock": 0.0, "prazo": 23.0, "brand": "SCHNEIDER | REF. NSYCRN44200"}}}, {"id": "1003", "desc": "Fonte de Alimentação Chaveada - 24 Vdc - 72 W - 5 A - 100/120 | 200/500 Vac", "qty": 16.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": 375.4, "stock": 16.0, "prazo": 0.0, "brand": "WEG | REF. 13108206"}, "UNIVERSO": {"price": 2305.23, "stock": 0.0, "prazo": 17.0, "brand": "SCHNEIDER | REF. ABL8RPS24050"}, "DIMENSIONAL": {"price": 1578.8, "stock": 7.0, "prazo": 18.0, "brand": "SCHNEIDER | REF. ABL8RPS24050"}, "THERBA": {"price": 1900.89, "stock": 0.0, "prazo": 5.0, "brand": "MARCA NÃO INFORMADA | REF. ABL8RPS24050"}, "NORTEL": {"price": 1452.03, "stock": 0.0, "prazo": 23.0, "brand": "SCHNEIDER | REF. ABL8RPS24050"}}}, {"id": "1004", "desc": "Fonte de Alimentação Chaveada - 24 Vdc - 72 W - 3 A - 100/120 | 200/500 Vac", "qty": 20.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": 345.2, "stock": 19.0, "prazo": 0.0, "brand": "WEG | REF. 13108241"}, "UNIVERSO": {"price": 1887.01, "stock": 0.0, "prazo": 17.0, "brand": "SCHNEIDER | REF. ABL8RPS24030"}, "DIMENSIONAL": {"price": 1376.35, "stock": 5.0, "prazo": 18.0, "brand": "SCHNEIDER | REF. ABL8RPS24030"}, "THERBA": {"price": 1571.0, "stock": 0.0, "prazo": 5.0, "brand": "MARCA NÃO INFORMADA | REF. ABL8RPS24030"}, "NORTEL": {"price": 1200.03, "stock": 0.0, "prazo": 23.0, "brand": "SCHNEIDER | REF. ABL8RPS24030"}}}, {"id": "1005", "desc": "RELÉ DE SEGURANÇA - CAT. 4 - 2NA 1 NF", "qty": 100.0, "unid": "pç", "selected": true, "offers": {"CETTI": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "UNIVERSO": {"price": 1708.29, "stock": 0.0, "prazo": 17.0, "brand": "SCHNEIDER | REF. XPSUAK12AP"}, "DIMENSIONAL": {"price": 1008.2, "stock": 2.0, "prazo": 18.0, "brand": "SCHNEIDER | REF. XPSUAK12AP"}, "THERBA": {"price": 1379.94, "stock": 0.0, "prazo": 5.0, "brand": "MARCA NÃO INFORMADA | REF. XPSUAK12AP"}, "NORTEL": {"price": 958.19, "stock": 0.0, "prazo": 23.0, "brand": "SCHNEIDER | REF. XPSUAK12AP"}}}, {"id": "1006", "desc": "Rele Segurança Cat4 24vcc 2na 2aux Bimanual", "qty": 9.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "UNIVERSO": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "DIMENSIONAL": {"price": 980.33, "stock": 0.0, "prazo": 1.0, "brand": "SCHNEIDER | REF. XPSUS12AP"}, "THERBA": {"price": 1370.38, "stock": 0.0, "prazo": 5.0, "brand": "MARCA NÃO INFORMADA | REF. XPSUS12AP"}, "NORTEL": {"price": 951.54, "stock": 0.0, "prazo": 23.0, "brand": "SCHNEIDER | REF. XPSUS12AP"}}}, {"id": "1007", "desc": "Relé de interface slim pré-montado, 6A, 1NAF, conexão por mola, LED, 24VCA/CC", "qty": 182.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": 45.9, "stock": 182.0, "prazo": 0.0, "brand": "WEIDMULLER | REF. 112277000"}, "UNIVERSO": {"price": 102.25, "stock": 0.0, "prazo": 17.0, "brand": "SCHNEIDER | REF. RSL1PRBU"}, "DIMENSIONAL": {"price": 60.81, "stock": 50.0, "prazo": 18.0, "brand": "SCHNEIDER | REF. RSL1PRBU"}, "THERBA": {"price": 77.59, "stock": 0.0, "prazo": 5.0, "brand": "MARCA NÃO INFORMADA | REF. RSL1PRBU"}, "NORTEL": {"price": 55.69, "stock": 0.0, "prazo": 23.0, "brand": "SCHNEIDER | REF. RSL1PRBU"}}}, {"id": "1008", "desc": "Legenda de identificação para base dos relés RSL", "qty": 182.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "UNIVERSO": {"price": 51.89, "stock": 0.0, "prazo": 93.0, "brand": "SCHNEIDER | REF. RSLZ5"}, "DIMENSIONAL": {"price": 35.09, "stock": 0.0, "prazo": 94.0, "brand": "SCHNEIDER | REF. RSLZ5"}, "THERBA": {"price": 43.3, "stock": 0.0, "prazo": 45.0, "brand": "MARCA NÃO INFORMADA | REF. RSLZ5"}, "NORTEL": {"price": 36.85, "stock": 0.0, "prazo": 100.0, "brand": "SCHNEIDER | REF. RSLZ5"}}}, {"id": "1009", "desc": "Barramento de 20 pólos para relé RSL", "qty": 30.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "UNIVERSO": {"price": 63.38, "stock": 0.0, "prazo": 17.0, "brand": "SCHNEIDER | REF. RSLZ2"}, "DIMENSIONAL": {"price": 15.56, "stock": 0.0, "prazo": 1.0, "brand": "SCHNEIDER | REF. RSLZ2"}, "THERBA": {"price": 19.97, "stock": 30.0, "prazo": 0.0, "brand": "MARCA NÃO INFORMADA | REF. RSLZ2"}, "NORTEL": {"price": 15.8, "stock": 0.0, "prazo": 23.0, "brand": "SCHNEIDER | REF. RSLZ2"}}}, {"id": "1010", "desc": "mini disjuntor monopolar de 4A", "qty": 36.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": 22.78, "stock": 19.0, "prazo": 0.0, "brand": "WEG | REF. 15265514"}, "UNIVERSO": {"price": 80.608, "stock": 0.0, "prazo": 11.0, "brand": "SCHNEIDER | REF. EZ9F33104"}, "DIMENSIONAL": {"price": 44.56, "stock": 0.0, "prazo": 1.0, "brand": "SCHNEIDER | REF. EZ9F33104"}, "THERBA": {"price": 67.06, "stock": 36.0, "prazo": 0.0, "brand": "MARCA NÃO INFORMADA | REF. EZ9F33104"}, "NORTEL": {"price": 46.96, "stock": 0.0, "prazo": 22.0, "brand": "SCHNEIDER | REF. EZ9F33104"}}}, {"id": "1011", "desc": "mini disjuntor bipolar de 6A", "qty": 36.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": 52.46, "stock": 22.0, "prazo": 0.0, "brand": "WEG | REF. 15265720"}, "UNIVERSO": {"price": 135.328, "stock": 36.0, "prazo": 0.0, "brand": "SCHNEIDER | REF. SCHNEIDEREZ9F33206"}, "DIMENSIONAL": {"price": 79.3, "stock": 0.0, "prazo": 1.0, "brand": "SCHNEIDER | REF. EZ9F33206"}, "THERBA": {"price": 112.59, "stock": 36.0, "prazo": 0.0, "brand": "MARCA NÃO INFORMADA | REF. EZ9F33206"}, "NORTEL": {"price": 78.83, "stock": 36.0, "prazo": 5.0, "brand": "SCHNEIDER | REF. EZ9F33206"}}}, {"id": "1012", "desc": "contator auxiliar 3NA+1NF - 24vcc", "qty": 36.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": 141.73, "stock": 8.0, "prazo": 0.0, "brand": "WEG | REF. 12486870"}, "UNIVERSO": {"price": 387.44, "stock": 0.0, "prazo": 11.0, "brand": "SCHNEIDER | REF. CA3KN31BD"}, "DIMENSIONAL": {"price": 248.44, "stock": 0.0, "prazo": 1.0, "brand": "SCHNEIDER | REF. CA3KN31BD"}, "THERBA": {"price": 340.33, "stock": 36.0, "prazo": 0.0, "brand": "MARCA NÃO INFORMADA | REF. CA3KN31BD"}, "NORTEL": {"price": 264.74, "stock": 0.0, "prazo": 23.0, "brand": "SCHNEIDER | REF. CA3KN31BD"}}}, {"id": "1013", "desc": "Bloco Contato Auxiliar Para Contator Frontal 2Na+2Nf", "qty": 36.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": 75.81, "stock": 11.0, "prazo": 0.0, "brand": "WEG | REF. P/CWCA0"}, "UNIVERSO": {"price": 140.8, "stock": 0.0, "prazo": 11.0, "brand": "SCHNEIDER | REF. LA1KN22"}, "DIMENSIONAL": {"price": 87.51, "stock": 0.0, "prazo": 1.0, "brand": "SCHNEIDER | REF. LA1KN22"}, "THERBA": {"price": 123.69, "stock": 36.0, "prazo": 0.0, "brand": "MARCA NÃO INFORMADA | REF. LA1KN22"}, "NORTEL": {"price": 95.56, "stock": 0.0, "prazo": 23.0, "brand": "SCHNEIDER | REF. LA1KN22"}}}, {"id": "1014", "desc": "Conector Borne K 2.5Mm Bg", "qty": 1440.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": 2.05, "stock": 700.0, "prazo": 0.0, "brand": "DINKLE | REF. DK2.5N"}, "UNIVERSO": {"price": 5.34, "stock": 1440.0, "prazo": 0.0, "brand": "WEIDMULLER | REF. 1521850000"}, "DIMENSIONAL": {"price": 1.68, "stock": 190.0, "prazo": 18.0, "brand": "STECK | REF. SK25"}, "THERBA": {"price": 2.53, "stock": 0.0, "prazo": 10.0, "brand": "MARCA NÃO INFORMADA | REF. SK25"}, "NORTEL": {"price": 1.73, "stock": 0.0, "prazo": 22.0, "brand": "STECK | REF. SK25"}}}, {"id": "1015", "desc": "Tampa Conector Borne K 2.5Mm Bg", "qty": 156.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": 0.95, "stock": 100.0, "prazo": 0.0, "brand": "DINKLE | REF. DK4NC"}, "UNIVERSO": {"price": 4.4, "stock": 0.0, "prazo": 6.0, "brand": "WEIDMULLER | REF. 1514400000"}, "DIMENSIONAL": {"price": 0.67, "stock": 0.0, "prazo": 18.0, "brand": "STECK | REF. STP25"}, "THERBA": {"price": 1.08, "stock": 0.0, "prazo": 10.0, "brand": "MARCA NÃO INFORMADA | REF. STP25"}, "NORTEL": {"price": 0.73, "stock": 0.0, "prazo": 22.0, "brand": "STECK | REF. STP25"}}}, {"id": "1016", "desc": "Poste Final Borne K", "qty": 132.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": 1.52, "stock": 130.0, "prazo": 0.0, "brand": "DINKLE | BORNE POSTE FINAL DINKLE 26412"}, "UNIVERSO": {"price": 5.54, "stock": 132.0, "prazo": 0.0, "brand": "WEIDMULLER | REF. C038356.0000"}, "DIMENSIONAL": {"price": 0.84, "stock": 0.0, "prazo": 1.0, "brand": "STECK | REF. SKEW35"}, "THERBA": {"price": 1.45, "stock": 0.0, "prazo": 10.0, "brand": "MARCA NÃO INFORMADA | REF. SKEW35"}, "NORTEL": {"price": 1.01, "stock": 132.0, "prazo": 5.0, "brand": "STECK | REF. SKEW35"}}}, {"id": "1017", "desc": "Conector Borne K 4.0Mm Bg", "qty": 144.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": 2.74, "stock": 144.0, "prazo": 0.0, "brand": "DINKLE | REF. DK4N"}, "UNIVERSO": {"price": 7.4, "stock": 144.0, "prazo": 0.0, "brand": "WEIDMULLER | REF. 2051180000"}, "DIMENSIONAL": {"price": 2.08, "stock": 0.0, "prazo": 17.0, "brand": "STECK | REF. SK4"}, "THERBA": {"price": 3.28, "stock": 0.0, "prazo": 10.0, "brand": "MARCA NÃO INFORMADA | REF. SK4"}, "NORTEL": {"price": 2.24, "stock": 0.0, "prazo": 22.0, "brand": "STECK | REF. SK4"}}}, {"id": "1018", "desc": "Conector Terra Borne K 4.0Mm", "qty": 234.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": 5.49, "stock": 100.0, "prazo": 0.0, "brand": "MARCA NÃO INFORMADA | BORNE PARAFUSO 4MM TERRA"}, "UNIVERSO": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "DIMENSIONAL": {"price": 6.65, "stock": 145.0, "prazo": 18.0, "brand": "STECK | REF. SKT4"}, "THERBA": {"price": 10.33, "stock": 0.0, "prazo": 10.0, "brand": "MARCA NÃO INFORMADA | REF. SKT4"}, "NORTEL": {"price": 7.05, "stock": 0.0, "prazo": 22.0, "brand": "STECK | REF. SKT4"}}}, {"id": "1019", "desc": "Ponte Conector 10P Borne K 2.5Mm", "qty": 60.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": 8.92, "stock": 60.0, "prazo": 0.0, "brand": "DINKLE | REF. DSS2.5N"}, "UNIVERSO": {"price": 78.32, "stock": 0.0, "prazo": 11.0, "brand": "WEIDMULLER | REF. 1527720000"}, "DIMENSIONAL": {"price": 14.62, "stock": 0.0, "prazo": 17.0, "brand": "STECK | REF. SCC25"}, "THERBA": {"price": 22.71, "stock": 0.0, "prazo": 10.0, "brand": "MARCA NÃO INFORMADA | REF. SCC25"}, "NORTEL": {"price": 15.51, "stock": 0.0, "prazo": 22.0, "brand": "STECK | REF. SCC25"}}}, {"id": "1020", "desc": "Tampa Conector Borne K 4.0Mm Bg", "qty": 68.0, "unid": "pç", "selected": true, "offers": {"CETTI": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "UNIVERSO": {"price": 4.17, "stock": 68.0, "prazo": 0.0, "brand": "WEIDMULLER | REF. 2051680000"}, "DIMENSIONAL": {"price": 1.01, "stock": 0.0, "prazo": 152.0, "brand": "STECK | REF. STP4"}, "THERBA": {"price": 1.57, "stock": 0.0, "prazo": 10.0, "brand": "MARCA NÃO INFORMADA | REF. STP4"}, "NORTEL": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}}}, {"id": "1021", "desc": "Canaleta 30x50 mm²", "qty": 36.0, "unid": "BR", "selected": true, "offers": {"CETTI": {"price": 27.9, "stock": 36.0, "prazo": 0.0, "brand": "MARCA NÃO INFORMADA | CANALETA PROAUTO R.A 30X50 CINZA 2 MTS 31786"}, "UNIVERSO": {"price": 46.48, "stock": 0.0, "prazo": 6.0, "brand": "WEIDMULLER | REF. C906596.0001"}, "DIMENSIONAL": {"price": 21.31, "stock": 0.0, "prazo": 1.0, "brand": "STECK | REF. CR5050"}, "THERBA": {"price": 35.84, "stock": 0.0, "prazo": 10.0, "brand": "MARCA NÃO INFORMADA | REF. CR5050"}, "NORTEL": {"price": 26.98, "stock": 0.0, "prazo": 24.0, "brand": "STECK | REF. CR5050"}}}, {"id": "1022", "desc": "BOTÃO DE EMERGÊNCIA 1NF", "qty": 72.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": 19.81, "stock": 72.0, "prazo": 0.0, "brand": "DESCONSIDERADO - LKM |"}, "UNIVERSO": {"price": 27.49, "stock": 0.0, "prazo": 6.0, "brand": "DESCONSIDERADO - METALTEX | REF. M20AKR-R-1B"}, "DIMENSIONAL": {"price": 16.24, "stock": 26.0, "prazo": 18.0, "brand": "STECK | REF. SLPFN1R4"}, "THERBA": {"price": 15.56, "stock": 0.0, "prazo": 10.0, "brand": "MARCA NÃO INFORMADA | REF. SLPFN1R4"}, "NORTEL": {"price": 17.94, "stock": 0.0, "prazo": 22.0, "brand": "STECK | REF. SLPFN1R4"}}}, {"id": "1023", "desc": "BLOCO DE CONTATO AUXILIAR PARA BOTÃO DE EMERGÊNCIA - NF", "qty": 72.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": 10.42, "stock": 72.0, "prazo": 0.0, "brand": "DESCONSIDERADO - SCHNEIDER | REF. ZA2EE102"}, "UNIVERSO": {"price": 5.44, "stock": 72.0, "prazo": 0.0, "brand": "DESCONSIDERADO - METALTEX | REF. M20-1B"}, "DIMENSIONAL": {"price": 8.96, "stock": 0.0, "prazo": 1.0, "brand": "STECK | REF. SLPL41"}, "THERBA": {"price": 8.38, "stock": 0.0, "prazo": 10.0, "brand": "MARCA NÃO INFORMADA | REF. SLPL41"}, "NORTEL": {"price": 9.65, "stock": 72.0, "prazo": 5.0, "brand": "STECK | REF. SLPL41"}}}, {"id": "1024", "desc": "BOTÃO DE IMPULSO PRETO", "qty": 36.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": 19.28, "stock": 36.0, "prazo": 0.0, "brand": "DESCONSIDERADO - SCHNEIDER | REF. 1N.A"}, "UNIVERSO": {"price": 21.24, "stock": 36.0, "prazo": 0.0, "brand": "DESCONSIDERADO - METALTEX | REF. M20AFR-B-1A"}, "DIMENSIONAL": {"price": 8.41, "stock": 8.0, "prazo": 18.0, "brand": "STECK | REF. SLPRN8F"}, "THERBA": {"price": 9.77, "stock": 0.0, "prazo": 10.0, "brand": "MARCA NÃO INFORMADA | REF. SLPRN8"}, "NORTEL": {"price": 31.93, "stock": 0.0, "prazo": 22.0, "brand": "DESCONSIDERADO - STECK | BOTÃO DUPLO VERDE/VERMELHO SLPDNR"}}}, {"id": "1025", "desc": "BLOCO DE CONTATO AUXILIAR NA", "qty": 36.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "UNIVERSO": {"price": 5.44, "stock": 36.0, "prazo": 0.0, "brand": "DESCONSIDERADO - METALTEX | REF. M20-1B"}, "DIMENSIONAL": {"price": 9.27, "stock": 0.0, "prazo": 1.0, "brand": "STECK | REF. SLPL42"}, "THERBA": {"price": 13.74, "stock": 0.0, "prazo": 10.0, "brand": "MARCA NÃO INFORMADA | REF. SLPL42"}, "NORTEL": {"price": 9.37, "stock": 36.0, "prazo": 5.0, "brand": "STECK | REF. SLPL42"}}}, {"id": "1026", "desc": "SINALEIRO BRANCO 220VCA", "qty": 36.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": 15.46, "stock": 28.0, "prazo": 0.0, "brand": "SCHNEIDER | REF. 110/220V"}, "UNIVERSO": {"price": 108.72, "stock": 0.0, "prazo": 31.0, "brand": "SCHNEIDER | REF. XB7EV07MP"}, "DIMENSIONAL": {"price": 68.68, "stock": 0.0, "prazo": 18.0, "brand": "SCHNEIDER | REF. XB7EV07MP"}, "THERBA": {"price": 96.73, "stock": 0.0, "prazo": 22.0, "brand": "MARCA NÃO INFORMADA | REF. XB7EV07MP"}, "NORTEL": {"price": 71.71, "stock": 0.0, "prazo": 23.0, "brand": "SCHNEIDER | REF. XB7EV07MP"}}}, {"id": "1027", "desc": "SINALEIRO VERDE 24 VCC", "qty": 76.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": 15.46, "stock": 20.0, "prazo": 0.0, "brand": "SCHNEIDER | REF. 12/24V"}, "UNIVERSO": {"price": 71.104, "stock": 0.0, "prazo": 31.0, "brand": "SCHNEIDER | REF. XB7EV03BP"}, "DIMENSIONAL": {"price": 44.92, "stock": 50.0, "prazo": 18.0, "brand": "SCHNEIDER | REF. XB7EV03BP"}, "THERBA": {"price": 63.25, "stock": 0.0, "prazo": 5.0, "brand": "MARCA NÃO INFORMADA | REF. XB7EV03BP"}, "NORTEL": {"price": 46.31, "stock": 0.0, "prazo": 23.0, "brand": "SCHNEIDER | REF. XB7EV03BP"}}}, {"id": "1028", "desc": "SINALEIRO VERMELHO 24 VCC", "qty": 168.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": 15.46, "stock": 80.0, "prazo": 0.0, "brand": "SCHNEIDER | REF. 12/24V"}, "UNIVERSO": {"price": 71.104, "stock": 0.0, "prazo": 31.0, "brand": "SCHNEIDER | REF. XB7EV04BP"}, "DIMENSIONAL": {"price": 44.92, "stock": 109.0, "prazo": 18.0, "brand": "SCHNEIDER | REF. XB7EV04BP"}, "THERBA": {"price": 63.25, "stock": 0.0, "prazo": 5.0, "brand": "MARCA NÃO INFORMADA | REF. XB7EV04BP"}, "NORTEL": {"price": 46.89, "stock": 0.0, "prazo": 23.0, "brand": "SCHNEIDER | REF. XB7EV04BP"}}}, {"id": "1029", "desc": "CHAVE SELETORA - MANOPLA CURTA - 2 POSIÇÕES FIXAS", "qty": 37.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": 22.84, "stock": 37.0, "prazo": 0.0, "brand": "DESCONSIDERADO - SCHNEIDER | REF. XA2ED21/XA2AD21"}, "UNIVERSO": {"price": 22.99, "stock": 37.0, "prazo": 0.0, "brand": "DESCONSIDERADO - METALTEX | REF. M20SCR2-B-1A"}, "DIMENSIONAL": {"price": 9.37, "stock": 0.0, "prazo": 1.0, "brand": "STECK | REF. SLMB8D0"}, "THERBA": {"price": 15.15, "stock": 0.0, "prazo": 5.0, "brand": "MARCA NÃO INFORMADA | REF. SLMB8D0"}, "NORTEL": {"price": 11.17, "stock": 0.0, "prazo": 22.0, "brand": "STECK | REF. SLMB8D0"}}}, {"id": "1030", "desc": "Botoeiras de Comando de Controle Ø 22,5 - 1 FURO", "qty": 88.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": 19.98, "stock": 49.0, "prazo": 0.0, "brand": "MARCA NÃO INFORMADA | REF. BMX101"}, "UNIVERSO": {"price": 45.81, "stock": 0.0, "prazo": 42.0, "brand": "STECK | REF. SQ1K"}, "DIMENSIONAL": {"price": 53.14, "stock": 0.0, "prazo": 18.0, "brand": "STECK | REF. SQ1K"}, "THERBA": {"price": 64.34, "stock": 0.0, "prazo": 22.0, "brand": "MARCA NÃO INFORMADA | REF. SQ1K"}, "NORTEL": {"price": 51.64, "stock": 88.0, "prazo": 5.0, "brand": "STECK | REF. SQ1K"}}}, {"id": "1031", "desc": "Botoeiras de Comando de Controle Ø 22,5 - 2 FURO", "qty": 37.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": 25.4, "stock": 15.0, "prazo": 0.0, "brand": "MARCA NÃO INFORMADA | REF. BMX102"}, "UNIVERSO": {"price": 53.66, "stock": 0.0, "prazo": 66.0, "brand": "STECK | REF. SQ2K"}, "DIMENSIONAL": {"price": 68.82, "stock": 24.0, "prazo": 18.0, "brand": "STECK | REF. SQ2K"}, "THERBA": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "NORTEL": {"price": 59.1, "stock": 0.0, "prazo": 22.0, "brand": "STECK | REF. SQ2K"}}}, {"id": "1032", "desc": "Botoeiras de Comando de Controle Ø 22,5 - 3 FURO", "qty": 36.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": 29.6, "stock": 15.0, "prazo": 0.0, "brand": "MARCA NÃO INFORMADA | REF. BMX103"}, "UNIVERSO": {"price": 70.42, "stock": 0.0, "prazo": 38.0, "brand": "STECK | REF. STECKSQ3K"}, "DIMENSIONAL": {"price": 81.53, "stock": 28.0, "prazo": 18.0, "brand": "STECK | REF. SQ3K"}, "THERBA": {"price": 98.88, "stock": 0.0, "prazo": 22.0, "brand": "MARCA NÃO INFORMADA | REF. SQ3K"}, "NORTEL": {"price": 80.38, "stock": 0.0, "prazo": 22.0, "brand": "STECK | REF. SQ3K"}}}, {"id": "1033", "desc": "Chave Seguranca com travamento AZM150SK-02/11RA-024", "qty": 26.0, "unid": "pç", "selected": true, "offers": {"CETTI": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "UNIVERSO": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "DIMENSIONAL": {"price": 1560.72, "stock": 0.0, "prazo": 92.0, "brand": "SCHMERSAL | REF. 11931078"}, "THERBA": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "NORTEL": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}}}, {"id": "1034", "desc": "Atuador para a chave de segurança - AZM150-B1", "qty": 26.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "UNIVERSO": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "DIMENSIONAL": {"price": 36.78, "stock": 0.0, "prazo": 102.0, "brand": "SCHMERSAL | REF. 11931110"}, "THERBA": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "NORTEL": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}}}, {"id": "1035", "desc": "Coded magnetic switch, 2 NC + 1 NO, BNS 36-02/10Z-R 5,0M", "qty": 72.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "UNIVERSO": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "DIMENSIONAL": {"price": 1060.37, "stock": 0.0, "prazo": 19.0, "brand": "SCHMERSAL | REF. BNS3602/10ZR5"}, "THERBA": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "NORTEL": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}}}, {"id": "1036", "desc": "Atuador para sensor magnético de segurança - BPS 36-1", "qty": 72.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "UNIVERSO": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "DIMENSIONAL": {"price": 141.71, "stock": 23.0, "prazo": 20.0, "brand": "SCHMERSAL | REF. BPS361"}, "THERBA": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "NORTEL": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}}}, {"id": "1037", "desc": "Chave de segurança - AZ 16-12ZVRK-M16", "qty": 32.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "UNIVERSO": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "DIMENSIONAL": {"price": 378.07, "stock": 0.0, "prazo": 1.0, "brand": "SCHMERSAL | REF. AZ1612ZVRKM16"}, "THERBA": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "NORTEL": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}}}, {"id": "1038", "desc": "Atuador para porta basculante - ATUADOR AZ 15/16-B6 KPL", "qty": 16.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "UNIVERSO": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "DIMENSIONAL": {"price": 274.56, "stock": 0.0, "prazo": 19.0, "brand": "SCHMERSAL | REF. AZ"}, "THERBA": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "NORTEL": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}}}, {"id": "1039", "desc": "Atuador porta deslizante - AZ15/16-B1", "qty": 16.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "UNIVERSO": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "DIMENSIONAL": {"price": 38.14, "stock": 0.0, "prazo": 1.0, "brand": "SCHMERSAL | REF. B1"}, "THERBA": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "NORTEL": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}}}, {"id": "1040", "desc": "Fixador Adesivo 25x25 mm - branco com adesivo", "qty": 550.0, "unid": "pç", "selected": true, "offers": {"CETTI": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "UNIVERSO": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "DIMENSIONAL": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "THERBA": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "NORTEL": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}}}, {"id": "1041", "desc": "Abraçadeira de nylon 0,25x10cm - Branca", "qty": 3600.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": 0.027000000000000003, "stock": 3600.0, "prazo": 0.0, "brand": "MARCA NÃO INFORMADA | REF. 18R"}, "UNIVERSO": {"price": 0.064, "stock": 3600.0, "prazo": 0.0, "brand": "HELLERMANN | REF. T18RNYNT100"}, "DIMENSIONAL": {"price": 2.44, "stock": 0.0, "prazo": 17.0, "brand": "STECK | REF. CAB10025BR"}, "THERBA": {"price": 0.0432, "stock": 0.0, "prazo": 5.0, "brand": "MARCA NÃO INFORMADA | REF. CAB10025BR"}, "NORTEL": {"price": 0.028, "stock": 3600.0, "prazo": 5.0, "brand": "STECK | REF. CAB10025BR"}}}, {"id": "1042", "desc": "Abraçadeira de nylon T8 20CMx4,6 mm - Branca", "qty": 3600.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": 0.1246, "stock": 3600.0, "prazo": 0.0, "brand": "MARCA NÃO INFORMADA | REF. 50R"}, "UNIVERSO": {"price": 0.224, "stock": 3600.0, "prazo": 0.0, "brand": "HELLERMANN | REF. T50RNYNT100"}, "DIMENSIONAL": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "THERBA": {"price": 0.2941, "stock": 0.0, "prazo": 5.0, "brand": "MARCA NÃO INFORMADA | REF. DXN3008B"}, "NORTEL": {"price": 0.13, "stock": 3600.0, "prazo": 5.0, "brand": "HELLERMANN | REF. T50R"}}}, {"id": "1043", "desc": "Conector Mult Borne 24A 2,5 mm² Pa66 85°C", "qty": 52.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "UNIVERSO": {"price": 29.88, "stock": 52.0, "prazo": 0.0, "brand": "SINDAL | REF. 0.50-4.00MM"}, "DIMENSIONAL": {"price": 8.58, "stock": 0.0, "prazo": 18.0, "brand": "STECK | REF. S71361"}, "THERBA": {"price": 13.93, "stock": 0.0, "prazo": 5.0, "brand": "MARCA NÃO INFORMADA | REF. S71361"}, "NORTEL": {"price": 8.9, "stock": 0.0, "prazo": 24.0, "brand": "STECK | REF. S71361"}}}, {"id": "1044", "desc": "conjunto cortina de luz 910 mm feixe de 14mm + Par de cabo de 10m - SLC440-ER-0970-14-01", "qty": 3.0, "unid": "pç", "selected": true, "offers": {"CETTI": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "UNIVERSO": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "DIMENSIONAL": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "THERBA": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "NORTEL": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}}}, {"id": "1045", "desc": "PRENSA CABO - M20X1,5", "qty": 160.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": 1.35, "stock": 60.0, "prazo": 0.0, "brand": "MARCA NÃO INFORMADA | REF. M-20"}, "UNIVERSO": {"price": 5.96, "stock": 160.0, "prazo": 0.0, "brand": "STECK | REF. S872CI"}, "DIMENSIONAL": {"price": 3.49, "stock": 0.0, "prazo": 1.0, "brand": "STECK | REF. S872CI"}, "THERBA": {"price": 5.09, "stock": 0.0, "prazo": 5.0, "brand": "MARCA NÃO INFORMADA | REF. S872CI"}, "NORTEL": {"price": 3.95, "stock": 0.0, "prazo": 22.0, "brand": "STECK | REF. S872CI"}}}, {"id": "1046", "desc": "PRENSA CABO - M16X1,5", "qty": 360.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": 0.85, "stock": 90.0, "prazo": 0.0, "brand": "MARCA NÃO INFORMADA | REF. M-16"}, "UNIVERSO": {"price": 5.33, "stock": 0.0, "prazo": 11.0, "brand": "STECK | REF. S871CI"}, "DIMENSIONAL": {"price": 3.14, "stock": 0.0, "prazo": 1.0, "brand": "STECK | REF. S871CI"}, "THERBA": {"price": 4.58, "stock": 0.0, "prazo": 5.0, "brand": "MARCA NÃO INFORMADA | REF. S871CI"}, "NORTEL": {"price": 2.76, "stock": 0.0, "prazo": 22.0, "brand": "STECK | REF. S871CI"}}}, {"id": "1047", "desc": "PRENSA CABO - PG 09", "qty": 360.0, "unid": "pç", "selected": true, "offers": {"CETTI": {"price": 0.84, "stock": 290.0, "prazo": 0.0, "brand": "MARCA NÃO INFORMADA | PRENSA CABO CINZA PG- 9 NYLON"}, "UNIVERSO": {"price": 3.296, "stock": 0.0, "prazo": 11.0, "brand": "STECK | REF. S800CI"}, "DIMENSIONAL": {"price": 2.22, "stock": 116.0, "prazo": 18.0, "brand": "STECK | REF. S800LI"}, "THERBA": {"price": 3.23, "stock": 0.0, "prazo": 5.0, "brand": "MARCA NÃO INFORMADA | REF. S800LI"}, "NORTEL": {"price": 2.34, "stock": 0.0, "prazo": 22.0, "brand": "STECK | REF. S800LI"}}}, {"id": "1048", "desc": "PRENSA CABO - PG 11", "qty": 360.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": 1.09, "stock": 200.0, "prazo": 0.0, "brand": "MARCA NÃO INFORMADA | PRENSA CABO CINZA PG- 11 NYLON"}, "UNIVERSO": {"price": 3.84, "stock": 360.0, "prazo": 0.0, "brand": "STECK | REF. S801CI"}, "DIMENSIONAL": {"price": 4.49, "stock": 14.0, "prazo": 153.0, "brand": "STECK | REF. S805LI"}, "THERBA": {"price": 6.64, "stock": 0.0, "prazo": 60.0, "brand": "MARCA NÃO INFORMADA | REF. S805LI"}, "NORTEL": {"price": 4.84, "stock": 0.0, "prazo": 157.0, "brand": "STECK | REF. S805LI"}}}, {"id": "1049", "desc": "INTERRUPTOR SECCIONADOR VARIO 63A MANOPLA VERMELHA/AMARELA", "qty": 13.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": 155.9, "stock": 9.0, "prazo": 0.0, "brand": "METALTEX | CHAVE SECCIONADORA METALTEX 63A FRONTAL 3 POLOS"}, "UNIVERSO": {"price": 1107.983, "stock": 0.0, "prazo": 11.0, "brand": "SCHNEIDER | REF. VCF3"}, "DIMENSIONAL": {"price": 749.58, "stock": 0.0, "prazo": 1.0, "brand": "SCHNEIDER | REF. VCF3"}, "THERBA": {"price": 993.16, "stock": 0.0, "prazo": 5.0, "brand": "MARCA NÃO INFORMADA | REF. VCF3"}, "NORTEL": {"price": 835.07, "stock": 13.0, "prazo": 5.0, "brand": "SCHNEIDER | REF. VCF3"}}}, {"id": "1050", "desc": "Contator Potência Tripolar 25A 220VCA 1NA+1NF Easypact", "qty": 3.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": 220.0, "stock": 3.0, "prazo": 0.0, "brand": "WEG | REF. 12075682"}, "UNIVERSO": {"price": 199.263, "stock": 3.0, "prazo": 0.0, "brand": "SCHNEIDER | REF. LC1E2510M7"}, "DIMENSIONAL": {"price": 308.32, "stock": 0.0, "prazo": 1.0, "brand": "SCHNEIDER | REF. LC1D25M7"}, "THERBA": {"price": 175.05, "stock": 3.0, "prazo": 0.0, "brand": "MARCA NÃO INFORMADA | REF. LC1E2510M7"}, "NORTEL": {"price": 137.74, "stock": 3.0, "prazo": 5.0, "brand": "SCHNEIDER | REF. LC1E2510M7"}}}, {"id": "1051", "desc": "Contato Auxiliar Instantaneo Contator Frontal 1NA+3NF", "qty": 3.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": 79.9, "stock": 3.0, "prazo": 0.0, "brand": "WEG | REF. BFB-22"}, "UNIVERSO": {"price": 118.623, "stock": 3.0, "prazo": 0.0, "brand": "SCHNEIDER | REF. LADN13"}, "DIMENSIONAL": {"price": 76.91, "stock": 0.0, "prazo": 1.0, "brand": "SCHNEIDER | REF. LADN13"}, "THERBA": {"price": 104.18, "stock": 3.0, "prazo": 0.0, "brand": "MARCA NÃO INFORMADA | REF. LADN13"}, "NORTEL": {"price": 78.42, "stock": 3.0, "prazo": 5.0, "brand": "SCHNEIDER | REF. LADN13"}}}, {"id": "1052", "desc": "Botão de emergência impulso soco - VERDE", "qty": 18.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "UNIVERSO": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "DIMENSIONAL": {"price": 15.34, "stock": 0.0, "prazo": 18.0, "brand": "STECK | REF. SLPFN2M4"}, "THERBA": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "NORTEL": {"price": 15.89, "stock": 0.0, "prazo": 22.0, "brand": "STECK | REF. SLPFN2M4"}}}, {"id": "1053", "desc": "CARCAÇA BASE BAIXA 2 TRAVAS - 16 polos", "qty": 10.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "UNIVERSO": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "DIMENSIONAL": {"price": 120.35, "stock": 0.0, "prazo": 1.0, "brand": "STECK | REF. SCBB2T16"}, "THERBA": {"price": 162.64, "stock": 0.0, "prazo": 10.0, "brand": "MARCA NÃO INFORMADA | REF. SCBB2T16"}, "NORTEL": {"price": 133.74, "stock": 0.0, "prazo": 22.0, "brand": "STECK | REF. SCBB2T16"}}}, {"id": "1054", "desc": "MIOLO FÊMEA - 16 polos", "qty": 10.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "UNIVERSO": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "DIMENSIONAL": {"price": 137.92, "stock": 0.0, "prazo": 1.0, "brand": "STECK | REF. SMB16"}, "THERBA": {"price": 188.59, "stock": 0.0, "prazo": 10.0, "brand": "MARCA NÃO INFORMADA | REF. SMB16"}, "NORTEL": {"price": 155.08, "stock": 0.0, "prazo": 22.0, "brand": "STECK | REF. SMB16"}}}, {"id": "1055", "desc": "CARCAÇA PLUGUE 4 REBITES - 16 polos", "qty": 10.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "UNIVERSO": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "DIMENSIONAL": {"price": 77.49, "stock": 0.0, "prazo": 1.0, "brand": "STECK | REF. SCPL4R16"}, "THERBA": {"price": 106.49, "stock": 0.0, "prazo": 10.0, "brand": "MARCA NÃO INFORMADA | REF. SCPL4R16"}, "NORTEL": {"price": 87.55, "stock": 0.0, "prazo": 22.0, "brand": "STECK | REF. SCPL4R16"}}}, {"id": "1056", "desc": "MIOLO MACHO - 16 pólos", "qty": 10.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "UNIVERSO": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "DIMENSIONAL": {"price": 126.81, "stock": 0.0, "prazo": 1.0, "brand": "STECK | REF. SMP16"}, "THERBA": {"price": 173.4, "stock": 0.0, "prazo": 10.0, "brand": "MARCA NÃO INFORMADA | REF. SMP16"}, "NORTEL": {"price": 142.59, "stock": 0.0, "prazo": 22.0, "brand": "STECK | REF. SMP16"}}}, {"id": "1057", "desc": "Contator Potência Tripolar 40A 220VCA 1NA+1NF Easypact", "qty": 2.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "UNIVERSO": {"price": 535.215, "stock": 2.0, "prazo": 0.0, "brand": "SCHNEIDER | REF. LC1E40M7"}, "DIMENSIONAL": {"price": 326.66, "stock": 0.0, "prazo": 1.0, "brand": "SCHNEIDER | REF. LC1E40M7"}, "THERBA": {"price": 470.15, "stock": 2.0, "prazo": 0.0, "brand": "MARCA NÃO INFORMADA | REF. LC1E40M7"}, "NORTEL": {"price": 389.96, "stock": 2.0, "prazo": 5.0, "brand": "SCHNEIDER | REF. LC1E40M7"}}}, {"id": "1058", "desc": "Contato Auxiliar Instantaneo Contator Frontal 2NA+2NF", "qty": 2.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": null, "stock": 0, "prazo": null, "brand": "NÃO COTADO / NÃO TRABALHA"}, "UNIVERSO": {"price": 118.625, "stock": 2.0, "prazo": 0.0, "brand": "SCHNEIDER | REF. LADN22"}, "DIMENSIONAL": {"price": 84.61, "stock": 0.0, "prazo": 1.0, "brand": "SCHNEIDER | REF. LADN22"}, "THERBA": {"price": 104.18, "stock": 2.0, "prazo": 0.0, "brand": "MARCA NÃO INFORMADA | REF. LADN22"}, "NORTEL": {"price": 87.53, "stock": 2.0, "prazo": 5.0, "brand": "SCHNEIDER | REF. LADN22"}}}, {"id": "1059", "desc": "DISJUNTOR CAIXA MOLDADA - 250 A", "qty": 2.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": 350.2, "stock": 2.0, "prazo": 0.0, "brand": "STECK | REF. SDJS250"}, "UNIVERSO": {"price": 408.95, "stock": 0.0, "prazo": 11.0, "brand": "STECK | REF. SDJH250"}, "DIMENSIONAL": {"price": 373.78, "stock": 0.0, "prazo": 17.0, "brand": "STECK | REF. SDJH250"}, "THERBA": {"price": 555.23, "stock": 0.0, "prazo": 5.0, "brand": "MARCA NÃO INFORMADA | REF. SDJH250"}, "NORTEL": {"price": 370.56, "stock": 0.0, "prazo": 24.0, "brand": "STECK | REF. SDJH250"}}}, {"id": "1060", "desc": "TERMINAIS DE CONEXÃO", "qty": 2.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": 62.5, "stock": 2.0, "prazo": 0.0, "brand": "DESCONSIDERADO - LKM | REF. LKM1"}, "UNIVERSO": {"price": 298.11, "stock": 0.0, "prazo": 11.0, "brand": "STECK | REF. SDJT250"}, "DIMENSIONAL": {"price": 161.6, "stock": 0.0, "prazo": 152.0, "brand": "STECK | REF. FRAME"}, "THERBA": {"price": 252.97, "stock": 0.0, "prazo": 5.0, "brand": "MARCA NÃO INFORMADA | REF. SDJT250"}, "NORTEL": {"price": 166.37, "stock": 0.0, "prazo": 157.0, "brand": "STECK | REF. SDJT250"}}}, {"id": "1061", "desc": "ALAVANCA DE ACIONAMENTO PROLONGADA", "qty": 2.0, "unid": "PÇ", "selected": true, "offers": {"CETTI": {"price": 342.9, "stock": 1.0, "prazo": 0.0, "brand": "STECK | REF. SDJP250A"}, "UNIVERSO": {"price": 326.99, "stock": 2.0, "prazo": 0.0, "brand": "STECK | REF. SDJP250"}, "DIMENSIONAL": {"price": 183.22, "stock": 0.0, "prazo": 18.0, "brand": "STECK | REF. SD"}, "THERBA": {"price": 277.47, "stock": 0.0, "prazo": 5.0, "brand": "MARCA NÃO INFORMADA | REF. SDJP250"}, "NORTEL": {"price": 191.83, "stock": 0.0, "prazo": 24.0, "brand": "STECK | REF. SDJP250"}}}]};
+
+    const app = Vue.createApp({
+        data() {
+            let hideInactiveObj = {};
+            if (DEFAULT_DATA.suppliers) {
+                DEFAULT_DATA.suppliers.forEach(s => hideInactiveObj[s] = false); 
+            }
+            if(DEFAULT_DATA.items) {
+                DEFAULT_DATA.items.forEach(i => {
+                    DEFAULT_DATA.suppliers.forEach(s => {
+                        if(i.offers[s]) { i.offers[s].active = true; } // Todos ativos por padrão
+                    });
+                });
+            }
+
+            return {
+                activeTab: 'relatorio',
+                newSupplier: '',
+                strategy: 'prazo_min', 
+                supplierFilter: 'ALL',
+                sortBy: 'default',
+                hideInactiveSup: hideInactiveObj,
+                suppliers: DEFAULT_DATA.suppliers || [],
+                items: DEFAULT_DATA.items || [],
+                isExporting: false,
+                isSyncing: false,
+                projectName: 'Projeto Principal',
+                savedProjectsList: [],
+                selectedLoadProject: ''
+            }
+        },
+        computed: {
+            strategyLabel() {
+                const labels = {
+                    'prazo_min': 'MAIS RÁPIDO', 'preco_min': 'MAIS BARATO', 'prazo_max': 'MAIS DEMORADO', 'preco_max': 'MAIS CARO'
+                };
+                return labels[this.strategy];
+            },
+            analysis() {
+                return this.items.map(item => {
+                    let needed = parseFloat(item.qty); if(isNaN(needed)) needed = 0;
+                    let tranches = [];
+                    for (let sup of this.suppliers) {
+                        let offer = item.offers[sup];
+                        if (!offer || !offer.active) continue; 
+                        let price = parseFloat(offer.price); if (isNaN(price) || price <= 0) continue;
+                        let stock = parseFloat(offer.stock); if (isNaN(stock)) stock = 0;
+                        let prazo = parseFloat(offer.prazo);
+                        
+                        if (stock > 0) tranches.push({ supplier: sup, qty: stock, prazo: 0, price: price, brand: offer.brand });
+                        if (!isNaN(prazo) && prazo >= 0) {
+                            if (prazo > 0 || stock === 0) tranches.push({ supplier: sup, qty: Infinity, prazo: prazo, price: price, brand: offer.brand });
+                        }
+                    }
+                    
+                    tranches.sort((a, b) => {
+                        if (this.strategy === 'prazo_min') { 
+                            if (a.prazo !== b.prazo) return a.prazo - b.prazo;
+                            return a.price - b.price;
+                        } else if (this.strategy === 'preco_min') { 
+                            if (a.price !== b.price) return a.price - b.price;
+                            return a.prazo - b.prazo;
+                        } else if (this.strategy === 'prazo_max') { 
+                            if (a.prazo !== b.prazo) return b.prazo - a.prazo;
+                            return a.price - b.price;
+                        } else if (this.strategy === 'preco_max') { 
+                            if (a.price !== b.price) return b.price - a.price;
+                            return a.prazo - b.prazo;
+                        }
+                    });
+                    
+                    let fulfilled = []; let totalCost = 0; let maxPrazo = 0;
+                    for (let t of tranches) {
+                        if (needed <= 0) break;
+                        let take = Math.min(needed, t.qty); if (take <= 0) continue;
+                        needed -= take; totalCost += take * t.price;
+                        if (t.prazo > maxPrazo) maxPrazo = t.prazo;
+                        let merged = false;
+                        for (let f of fulfilled) {
+                            if (f.supplier === t.supplier && f.price === t.price && f.prazo === t.prazo && f.brand === t.brand) {
+                                f.qty += take; merged = true; break;
+                            }
+                        }
+                        if (!merged) fulfilled.push({ supplier: t.supplier, qty: take, price: t.price, prazo: t.prazo, brand: t.brand });
+                    }
+                    return { item: item, fulfilled: fulfilled, unfulfilled: needed, totalCost: totalCost, maxPrazo: fulfilled.length > 0 ? maxPrazo : Infinity };
+                });
+            },
+            filteredAnalysis() {
+                let base = this.analysis;
+                if (this.supplierFilter !== 'ALL') {
+                    base = base.map(res => {
+                        let newRes = JSON.parse(JSON.stringify(res)); newRes.item = res.item; 
+                        newRes.fulfilled = newRes.fulfilled.filter(f => f.supplier === this.supplierFilter);
+                        newRes.totalCost = newRes.fulfilled.reduce((acc, f) => acc + (f.qty * f.price), 0);
+                        newRes.maxPrazo = newRes.fulfilled.length > 0 ? Math.max(...newRes.fulfilled.map(f => f.prazo)) : 0;
+                        return newRes;
+                    }).filter(res => res.fulfilled.length > 0);
+                }
+                if (this.sortBy === 'qty_desc') base.sort((a, b) => b.item.qty - a.item.qty);
+                else if (this.sortBy === 'cost_asc') base.sort((a, b) => a.totalCost - b.totalCost);
+                else if (this.sortBy === 'cost_desc') base.sort((a, b) => b.totalCost - a.totalCost);
+                return base;
+            },
+            filteredGrandTotal() { 
+                return this.filteredAnalysis.filter(a => a.item.selected).reduce((acc, curr) => acc + curr.totalCost, 0); 
+            }
+        },
+        methods: {
+            formatMoney(value) {
+                if(isNaN(value) || value === null || value === 0) return 'R$ 0,00';
+                return 'R$ ' + value.toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+            },
+            getStatus(res) {
+                if(res.unfulfilled > 0) return `FALTA ${res.unfulfilled} UN.`;
+                if(res.fulfilled.length === 0) return 'SEM COTAÇÃO';
+                let has_imediato = res.fulfilled.some(f => f.prazo === 0);
+                let has_enc = res.fulfilled.some(f => f.prazo > 0);
+                if(has_imediato && !has_enc) return 'IMEDIATO';
+                if(!has_imediato && has_enc) return `ENCOMENDA - ${res.maxPrazo} DIAS`;
+                return `PARCIAL AGORA + SALDO EM ${res.maxPrazo} DIAS`;
+            },
+            getSubRows(res) {
+                let rows = [];
+                const rowCount = Math.max(1, res.fulfilled.length);
+                for(let i = 0; i < rowCount; i++) {
+                    if (i < res.fulfilled.length) {
+                        let f = res.fulfilled[i];
+                        rows.push({
+                            supplier: f.supplier,
+                            qtd_agora: f.prazo === 0 ? f.qty : '',
+                            qtd_enc: f.prazo > 0 ? f.qty : '',
+                            prazo_enc: f.prazo > 0 ? f.prazo + ' dias' : '',
+                            price: f.price,
+                            subtotal: f.qty * f.price,
+                            brand: f.brand || ''
+                        });
+                    } else {
+                        rows.push({ supplier: '', qtd_agora: '', qtd_enc: '', prazo_enc: '', price: '', subtotal: '', brand: '' });
+                    }
+                }
+                return rows;
+            },
+            addSupplier() {
+                const name = this.newSupplier.trim().toUpperCase();
+                if (name && !this.suppliers.includes(name)) {
+                    this.suppliers.push(name); 
+                    this.hideInactiveSup[name] = false;
+                    this.items.forEach(item => { 
+                        item.offers[name] = { price: null, stock: null, prazo: null, brand: '', active: true }; 
+                    });
+                    this.newSupplier = '';
+                }
+            },
+            removeSupplier(idx) {
+                if(confirm('Excluir este fornecedor e todos os seus preços?')) {
+                    const supName = this.suppliers[idx]; this.suppliers.splice(idx, 1);
+                    delete this.hideInactiveSup[supName]; this.items.forEach(item => { delete item.offers[supName]; });
+                    if(this.supplierFilter === supName) this.supplierFilter = 'ALL'; 
+                    this.activeTab = 'materiais';
+                }
+            },
+            addItem() {
+                const newItem = { id: '', desc: '', qty: 1, unid: 'UN', selected: true, offers: {} };
+                this.suppliers.forEach(sup => { newItem.offers[sup] = { price: null, stock: null, prazo: null, brand: '', active: true }; });
+                this.items.unshift(newItem); this.activeTab = 'materiais';
+            },
+            removeItem(idx) {
+                if(confirm('Excluir este material permanentemente?')) { 
+                    this.items.splice(idx, 1); 
+                }
+            },
+            
+            // -------- FUNÇÕES DO FIREBASE (NUVEM) --------
+            async fetchProjectsList() {
+                try {
+                    const snapshot = await db.collection("orcamentos").get();
+                    let list = [];
+                    snapshot.forEach(doc => {
+                        let data = doc.data();
+                        if(data.projectName) {
+                            list.push(data.projectName);
+                        } else {
+                            list.push(doc.id);
+                        }
+                    });
+                    this.savedProjectsList = list.sort();
+                } catch(e) {
+                    console.error("Erro ao buscar lista de projetos: ", e);
+                }
+            },
+            async syncToCloud() {
+                if(!this.projectName || this.projectName.trim() === '') {
+                    alert("Por favor, digite um Nome para o Projeto antes de salvar!");
+                    return;
+                }
+                this.isSyncing = true;
+                try {
+                    const docName = this.projectName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+                    await db.collection("orcamentos").doc(docName).set({
+                        projectName: this.projectName,
+                        suppliers: this.suppliers,
+                        items: this.items
+                    });
+                    localStorage.setItem("lastProject", docName);
+                    await this.fetchProjectsList(); // Atualiza a lista dropdown
+                    alert(`Projeto "${this.projectName}" salvo na Nuvem com sucesso!`);
+                } catch (e) {
+                    alert("Erro ao salvar dados na Nuvem. Verifique as permissões do Firebase.");
+                    console.error(e);
+                } finally {
+                    this.isSyncing = false;
+                }
+            },
+            async loadFromCloud() {
+                if(!this.selectedLoadProject || this.selectedLoadProject.trim() === '') {
+                    alert("Selecione um projeto na lista para carregar.");
+                    return;
+                }
+                const docName = this.selectedLoadProject.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+                try {
+                    const docSnapshot = await db.collection("orcamentos").doc(docName).get();
+                    if (docSnapshot.exists) {
+                        const data = docSnapshot.data();
+                        this.suppliers = data.suppliers || [];
+                        this.items = data.items || [];
+                        this.projectName = data.projectName;
+                        localStorage.setItem("lastProject", docName);
+                        
+                        // Atualiza as flags de exibicao
+                        this.suppliers.forEach(s => {
+                            if(this.hideInactiveSup[s] === undefined) this.hideInactiveSup[s] = false;
+                        });
+                        alert(`Projeto "${this.projectName}" carregado com sucesso da Nuvem!`);
+                    } else {
+                        alert(`Nenhum projeto encontrado com o nome "${this.selectedLoadProject}". Tente outro nome.`);
+                    }
+                } catch (e) {
+                    alert("Erro ao carregar do servidor.");
+                    console.error(e);
+                }
+            },
+            
+            clearAndResetSystem() {
+                if(confirm("⚠️ ATENÇÃO:\nTem certeza que deseja LIMPAR todos os materiais da tela para começar um novo orçamento do zero?\n(Isso NÃO apagará os orçamentos que já estão salvos no servidor).")) {
+                    this.items = [];
+                    this.suppliers = [];
+                    this.supplierFilter = 'ALL';
+                    this.projectName = '';
+                    this.activeTab = 'materiais';
+                }
+            },
+            // ---------------------------------------------
+            
+            async exportExcel() {
+                if (!window.ExcelJS) { alert("A biblioteca ExcelJS não foi carregada."); return; }
+                this.isExporting = true;
+                
+                try {
+                    const wb = new ExcelJS.Workbook();
+
+                    // =========================================================
+                    // PLANILHA 1: MODELO PADRÃO (Panasonic Geral c/ Espaçadores)
+                    // =========================================================
+                    const ws1 = wb.addWorksheet('Geral');
+                    
+                    let max_sups_in_row = 0;
+                    const toExport = this.filteredAnalysis.filter(a => a.item.selected);
+                    toExport.forEach(res => { if (res.fulfilled.length > max_sups_in_row) max_sups_in_row = res.fulfilled.length; });
+                    if(max_sups_in_row === 0) max_sups_in_row = 1;
+
+                    let cols1 = [
+                        { header: 'Produto', key: 'id', width: 12 },
+                        { header: 'Descrição', key: 'desc', width: 55 },
+                        { header: 'Quantidade', key: 'qty_req', width: 12 },
+                        { header: 'Unid. medida', key: 'unid', width: 12 }
+                    ];
+
+                    for (let i = 1; i <= max_sups_in_row; i++) {
+                        cols1.push({ header: 'EMPRESA', key: `sup_${i}`, width: 18 });
+                        cols1.push({ header: `Valor Empresa ${i}`, key: `price_${i}`, width: 16 });
+                        cols1.push({ header: 'Quantidade', key: `qty_${i}`, width: 12 });
+                        cols1.push({ header: 'Dias', key: `dias_${i}`, width: 12 });
+                        cols1.push({ header: `Valor total Empresa ${i}`, key: `tot_${i}`, width: 20 });
+                        cols1.push({ header: ' ', key: `blank_${i}`, width: 4 }); 
+                    }
+                    cols1.push({ header: 'Status', key: 'status', width: 35 });
+                    cols1.push({ header: ' ', key: 'blank_final', width: 4 }); 
+                    cols1.push({ header: 'Valor total geral', key: 'total_geral', width: 22 });
+
+                    ws1.columns = cols1;
+
+                    ws1.getRow(1).eachCell((cell) => {
+                        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'D9D9D9' } };
+                        cell.font = { bold: true };
+                        cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+                        if (cell.value && cell.value.trim() !== '') {
+                            cell.border = { top: { style: 'thin'}, left: { style: 'thin'}, bottom: { style: 'thin'}, right: { style: 'thin'} };
+                        }
+                    });
+
+                    toExport.forEach(res => {
+                        let rowData = { id: res.item.id, desc: res.item.desc, qty_req: res.item.qty, unid: res.item.unid, total_geral: res.totalCost };
+                        
+                        res.fulfilled.forEach((f, index) => {
+                            let i = index + 1;
+                            rowData[`sup_${i}`] = f.supplier; rowData[`price_${i}`] = f.price; rowData[`qty_${i}`] = f.qty;
+                            rowData[`dias_${i}`] = f.prazo; rowData[`tot_${i}`] = f.qty * f.price;
+                        });
+
+                        rowData['status'] = this.getStatus(res);
+
+                        let row = ws1.addRow(rowData);
+                        row.eachCell((cell, colNumber) => {
+                            let colKey = ws1.getColumn(colNumber).key;
+                            if(colKey && !colKey.startsWith('blank')) {
+                                cell.border = { top: { style: 'thin'}, left: { style: 'thin'}, bottom: { style: 'thin'}, right: { style: 'thin'} };
+                            }
+                            cell.alignment = { vertical: 'middle' };
+                            if(colKey && (colKey.startsWith('qty') || colKey.startsWith('dias') || colKey === 'unid')) {
+                                cell.alignment = { vertical: 'middle', horizontal: 'center' };
+                            }
+                            if(colKey && (colKey.startsWith('price') || colKey.startsWith('tot') || colKey === 'total_geral')) {
+                                cell.numFmt = '"R$" #,##0.00';
+                            }
+                        });
+                    });
+
+                    // =========================================================
+                    // PLANILHA 2: RESUMO CONSOLIDADO (MOLDE PANASONIC MATRIZ)
+                    // =========================================================
+                    const ws2 = wb.addWorksheet('Resumo Consolidado');
+                    ws2.columns = [
+                        { header: 'ITEM', key: 'id', width: 10 },
+                        { header: 'DESCRIÇÃO DO MATERIAL', key: 'desc', width: 55 },
+                        { header: 'QTD. NECESSÁRIA', key: 'qty_req', width: 15 },
+                        { header: 'FORNECEDOR ESCOLHIDO', key: 'supplier', width: 22 },
+                        { header: 'QTD. AGORA', key: 'qtd_agora', width: 12 },
+                        { header: 'QTD. ENCOMENDA', key: 'qtd_enc', width: 16 },
+                        { header: 'PRAZO DA ENCOMENDA', key: 'prazo_enc', width: 20 },
+                        { header: 'PREÇO UNITÁRIO', key: 'price', width: 16 },
+                        { header: 'SUBTOTAL NO FORNECEDOR', key: 'subtotal', width: 22 },
+                        { header: 'TOTAL DO MATERIAL', key: 'total_mat', width: 20 },
+                        { header: 'STATUS DO MATERIAL', key: 'status', width: 35 },
+                        { header: 'MARCA / MODELO OFERTADO', key: 'brand', width: 45 }
+                    ];
+
+                    ws2.getRow(1).eachCell((cell, colN) => {
+                        cell.font = { bold: true };
+                        cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+                        cell.border = { top: { style: 'thin'}, left: { style: 'thin'}, bottom: { style: 'thin'}, right: { style: 'thin'} };
+                        if (colN === 5) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'E2F0D9' } };
+                        else if (colN === 6 || colN === 7) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FCE4D6' } };
+                        else if (colN === 8 || colN === 9) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'DDEBF7' } };
+                        else cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'D9D9D9' } };
+                    });
+
+                    let currentRow = 2;
+
+                    toExport.forEach(res => {
+                        const subRows = this.getSubRows(res);
+                        const startRow = currentRow;
+                        const endRow = currentRow + subRows.length - 1;
+
+                        subRows.forEach((row, idx) => {
+                            let r = ws2.addRow({
+                                id: idx === 0 ? res.item.id : '',
+                                desc: idx === 0 ? res.item.desc : '',
+                                qty_req: idx === 0 ? res.item.qty : '',
+                                supplier: row.supplier,
+                                qtd_agora: row.qtd_agora,
+                                qtd_enc: row.qtd_enc,
+                                prazo_enc: row.prazo_enc !== '' ? `${row.prazo_enc} dias` : '',
+                                price: row.price !== '' ? row.price : '',
+                                subtotal: row.subtotal !== '' ? row.subtotal : '',
+                                total_mat: idx === 0 ? res.totalCost : '',
+                                status: idx === 0 ? this.getStatus(res) : '',
+                                brand: row.brand
+                            });
+
+                            r.eachCell((cell, colN) => {
+                                cell.alignment = { vertical: 'middle', wrapText: true };
+                                cell.border = { top: { style: 'thin'}, left: { style: 'thin'}, bottom: { style: 'thin'}, right: { style: 'thin'} };
+                                if ([1,3,4,5,6,7,11].includes(colN)) cell.alignment.horizontal = 'center';
+                                if ([8,9,10].includes(colN)) {
+                                    cell.alignment.horizontal = 'right';
+                                    if(cell.value !== '') cell.numFmt = '"R$" #,##0.00';
+                                }
+                                
+                                if (colN === 5) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'E2F0D9' } };
+                                if (colN === 6 || colN === 7) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FCE4D6' } };
+                                if (colN === 8 || colN === 9) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'DDEBF7' } };
+                            });
+                            currentRow++;
+                        });
+
+                        ws2.mergeCells(`A${startRow}:A${endRow}`);
+                        ws2.mergeCells(`B${startRow}:B${endRow}`);
+                        ws2.mergeCells(`C${startRow}:C${endRow}`);
+                        ws2.mergeCells(`J${startRow}:J${endRow}`);
+                        ws2.mergeCells(`K${startRow}:K${endRow}`);
+                    });
+
+                    // =========================================================
+                    // PLANILHAS 3+: SEPARADO POR FORNECEDOR VENCEDOR
+                    // =========================================================
+                    const winningSuppliers = [...new Set(toExport.flatMap(res => res.fulfilled.map(f => f.supplier)))];
+                    for (let sup of winningSuppliers) {
+                        const wsSup = wb.addWorksheet(`Pedido - ${sup}`);
+                        wsSup.columns = [
+                            { header: 'CÓDIGO', key: 'id', width: 12 }, { header: 'DESCRIÇÃO', key: 'desc', width: 60 },
+                            { header: 'QTD', key: 'qty', width: 10 }, { header: 'UN', key: 'unid', width: 8 },
+                            { header: 'PRAZO', key: 'prazo', width: 15 }, { header: 'VALOR UNIT.', key: 'price', width: 18 },
+                            { header: 'SUBTOTAL', key: 'subtotal', width: 20 }, { header: 'MARCA/MODELO', key: 'brand', width: 45 }
+                        ];
+
+                        wsSup.getRow(1).eachCell((cell) => {
+                            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '0F172A' } };
+                            cell.font = { color: { argb: 'FFFFFF' }, bold: true };
+                            cell.alignment = { vertical: 'middle', horizontal: 'center' };
+                        });
+
+                        let supTotal = 0;
+                        toExport.forEach(res => {
+                            let supItems = res.fulfilled.filter(f => f.supplier === sup);
+                            supItems.forEach(f => {
+                                let sub = f.qty * f.price; supTotal += sub;
+                                let row = wsSup.addRow({ id: res.item.id, desc: res.item.desc, qty: f.qty, unid: res.item.unid, prazo: f.prazo === 0 ? "Imediato" : `${f.prazo} Dias`, price: f.price, subtotal: sub, brand: f.brand || "-" });
+                                row.eachCell((cell, colN) => {
+                                    cell.border = { top: { style: 'thin', color: { argb: 'CBD5E1' } }, bottom: { style: 'thin', color: { argb: 'CBD5E1' } } };
+                                    cell.alignment = { vertical: 'middle' };
+                                    if ([3, 4, 5].includes(colN)) cell.alignment = { vertical: 'middle', horizontal: 'center' };
+                                    if ([6, 7].includes(colN)) cell.numFmt = '"R$" #,##0.00';
+                                });
+                            });
+                        });
+
+                        let totalRowSup = wsSup.addRow({ prazo: "TOTAL DO PEDIDO:", price: "", subtotal: supTotal });
+                        totalRowSup.getCell(5).font = { bold: true }; totalRowSup.getCell(5).alignment = { horizontal: 'right' };
+                        totalRowSup.getCell(7).font = { bold: true }; totalRowSup.getCell(7).numFmt = '"R$" #,##0.00';
+                        totalRowSup.eachCell(c => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'E2E8F0' } }; });
+                    }
+
+                    const buffer = await wb.xlsx.writeBuffer();
+                    const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+                    
+                    let fileName = `Planilha_${this.projectName.replace(/[^a-z0-9]/gi, '_')}.xlsx`;
+                    if(this.supplierFilter !== 'ALL') {
+                        fileName = `Planilha_${this.projectName.replace(/[^a-z0-9]/gi, '_')}_${this.supplierFilter}.xlsx`;
+                    }
+                    saveAs(blob, fileName);
+
+                } catch (error) {
+                    console.error("Erro ao gerar Excel:", error);
+                    alert("Houve um erro ao gerar o arquivo Excel.");
+                } finally {
+                    this.isExporting = false;
+                }
+            }
+        }
+    });
+
+    app.mount('#app');
+</script>
+</body>
+</html>
