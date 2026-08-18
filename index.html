@@ -44,25 +44,48 @@
 
         @media print {
             .no-print, .sidebar { display: none !important; }
-            .layout-wrapper { display: block; height: auto; overflow: visible; }
-            .main-content { overflow: visible; background: white; padding: 0 !important; }
-            @page { size: A4 landscape; margin: 5mm; }
-            body { font-size: 7.5pt !important; background: white; color: black; }
             
-            .print-card-grid { display: flex !important; flex-direction: row !important; gap: 10px !important; margin-bottom: 10px !important; }
+            /* Remove all height constraints so the browser creates new pages */
+            html, body { height: auto !important; overflow: visible !important; font-size: 8pt !important; background: white; color: black; }
+            .layout-wrapper, .main-content { display: block !important; height: auto !important; overflow: visible !important; width: 100% !important; padding: 0 !important; }
+            
+            /* Strip the scrollable container limits */
+            .table-container { max-height: none !important; overflow: visible !important; border: none !important; box-shadow: none !important; }
+            
+            @page { size: A4 landscape; margin: 8mm; }
+            
+            .print-card-grid { display: flex !important; flex-direction: row !important; gap: 10px !important; margin-bottom: 15px !important; page-break-inside: avoid; }
             .print-card { flex: 1; border: 1px solid #cbd5e1 !important; padding: 8px !important; border-radius: 4px !important; }
 
-            .table-input { font-size: 7.5pt !important; border: 1px solid #000 !important; }
-            .table-input th { background-color: #0f172a !important; color: #ffffff !important; border: 1px solid #000 !important; padding: 5px !important; font-size: 7.5pt !important; }
-            .table-input td { padding: 5px 6px !important; border: 1px solid #cbd5e1 !important; background: #fff !important; color: #000 !important;}
-            tr { page-break-inside: avoid !important; }
+            .table-input { width: 100% !important; font-size: 8pt !important; border-collapse: collapse !important; }
+            .table-input th { background-color: #0f172a !important; color: #ffffff !important; border: 1px solid #000 !important; padding: 6px !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .table-input td { padding: 6px !important; border: 1px solid #cbd5e1 !important; background: #fff !important; color: #000 !important; page-break-inside: avoid !important;}
+            
+            /* Fix page breaking */
+            table { page-break-after: auto; }
+            tr { page-break-inside: avoid !important; page-break-after: auto; }
+            td { page-break-inside: avoid !important; }
+            thead { display: table-header-group; }
+            tfoot { display: table-footer-group; }
+            
+            /* Preserve tag colors */
+            .bg-slate-50 { background-color: #f8fafc !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .bg-blue-50 { background-color: #eff6ff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .bg-slate-800 { background-color: #1e293b !important; color: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .text-blue-600 { color: #2563eb !important; }
+            .text-emerald-400 { color: #10b981 !important; }
+            .text-red-600 { color: #dc2626 !important; }
         }
     </style>
 </head>
 <body>
 <div id="app" class="layout-wrapper">
     
-    <!-- Memória de Autocompletar Locais -->
+    <!-- Memória de Autocompletar Marcas e Locais -->
+    <datalist id="saved-brands">
+        <option v-for="b in uniqueBrands" :key="b" :value="b"></option>
+    </datalist>
+
     <datalist id="saved-locals">
         <option v-for="loc in uniqueLocals" :key="loc" :value="loc"></option>
     </datalist>
@@ -149,6 +172,7 @@
                             <th class="w-16 text-center">Comprar</th>
                             <th class="w-24">Cód.</th>
                             <th>Descrição</th>
+                            <th class="w-32 text-center bg-slate-700 text-white border-r border-slate-600">🏷️ Marca Ref.</th>
                             <th class="w-64 text-center bg-slate-700 text-white">📍 Locais / Destinos do Material</th>
                             <th class="w-24 text-center">Qtd Total</th>
                             <th class="w-16 text-center">Unid</th>
@@ -160,8 +184,9 @@
                             <td class="text-center"><label class="toggle-switch"><input type="checkbox" v-model="item.selected"><span class="slider"></span></label></td>
                             <td><input v-model="item.id"></td>
                             <td><input v-model="item.desc"></td>
+                            <td class="p-2"><input v-model="item.brand" list="saved-brands" placeholder="Ex: WEG, Steck..." class="w-full text-center text-xs font-bold text-slate-700 border border-slate-300 rounded p-2 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 uppercase"></td>
                             
-                            <!-- COLUNA DE SUBCONJUNTOS DE DESTINO COM NOVO DESIGN -->
+                            <!-- COLUNA DE SUBCONJUNTOS DE DESTINO -->
                             <td class="p-2 bg-slate-50/50 min-w-[280px]">
                                 <div v-if="item.allocations && item.allocations.length > 0" class="flex flex-col gap-2 mb-2">
                                     <div v-for="(alloc, aIdx) in item.allocations" :key="aIdx" class="flex items-center gap-1 w-full">
@@ -228,7 +253,6 @@
         <!-- RELATORIO -->
         <div v-show="activeTab === 'relatorio'" class="h-full flex flex-col">
             <div class="flex flex-col xl:flex-row justify-between gap-4 mb-6 no-print bg-white p-5 rounded-xl border shadow-sm">
-                <!-- REDESENHO DOS FILTROS -->
                 <div class="flex-1 grid grid-cols-1 md:grid-cols-4 gap-4">
                     <div>
                         <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Estratégia de Decisão</label>
@@ -281,7 +305,7 @@
                 <div class="bg-white p-4 rounded-xl border border-l-4 border-l-red-500 print-card shadow-sm"><div class="text-[10px] text-slate-500 font-bold uppercase mb-1">Itens c/ Pendência</div><div class="text-2xl font-black text-red-600">{{ filteredAnalysis.filter(a => a.item.selected && a.unfulfilled > 0).length }}</div></div>
             </div>
 
-            <!-- TABELA HTML DO RELATORIO (Com Colunas Dinamicas) -->
+            <!-- TABELA HTML DO RELATORIO (Tabela Limpa 6 Colunas) -->
             <div class="flex-1 bg-white rounded-xl border overflow-y-auto table-container shadow-sm">
                 <div class="hidden print-header p-5 border-b bg-slate-800 text-white">
                     <h1 class="text-2xl font-bold mb-1">Plano de Compras: {{ projectName }}</h1>
@@ -296,29 +320,18 @@
                         <tr class="bg-slate-900 text-white text-xs">
                             <th class="w-16 text-center">CÓD</th>
                             <th>DESCRIÇÃO DO MATERIAL</th>
-                            
-                            <!-- CABEÇALHOS DINÂMICOS PARA OS LOCAIS (SP, MG, ETC) -->
-                            <th v-for="loc in displayLocals" :key="loc" class="w-20 text-center bg-slate-800 border-l border-slate-700 text-blue-300">{{ loc }}</th>
-                            
-                            <th class="w-16 text-center border-l border-slate-700">QTD<br>TOTAL</th>
-                            <th>COMPOSIÇÃO DA COMPRA</th>
-                            <th class="w-24 text-center">PRAZO LOTE</th>
-                            <th class="w-32 text-right">CUSTO LOTE</th>
+                            <th class="w-16 text-center border-l border-slate-700">QTD</th>
+                            <th class="w-[40%] text-left pl-3">COMPOSIÇÃO DA COMPRA (MARCAS)</th>
+                            <th class="w-20 text-center">PRAZO LOTE</th>
+                            <th class="w-28 text-right pr-3">CUSTO LOTE</th>
                         </tr>
                     </thead>
                     <tbody>
                         <tr v-for="res in filteredAnalysis" :key="res.item.id" v-show="res.item.selected">
                             <td class="text-center font-bold text-slate-500">{{ res.item.id }}</td>
-                            <td class="font-medium text-slate-900">{{ res.item.desc }}</td>
+                            <td class="font-medium text-slate-900 text-sm">{{ res.item.desc }}</td>
                             
-                            <!-- COLUNAS DINÂMICAS DE QTD POR LOCAL -->
-                            <td v-for="loc in displayLocals" :key="loc" class="text-center font-black text-slate-700 bg-slate-50/50 border-x border-slate-200">
-                                <span v-if="getAllocQty(res.item, loc) !== '-'">{{ getAllocQty(res.item, loc) }}</span>
-                                <span v-else class="text-slate-300 font-normal">-</span>
-                            </td>
-                            
-                            <!-- QTD TOTAL DA LINHA -->
-                            <td class="text-center bg-blue-50/30 border-r border-slate-200">
+                            <td class="text-center bg-slate-50/50 border-x border-slate-200">
                                 <div class="font-black text-lg text-blue-700">{{ res.displayQty }}</div>
                                 <div class="text-[9px] font-bold text-slate-500 uppercase">{{ res.item.unid }}</div>
                             </td>
@@ -326,19 +339,39 @@
                             <td class="p-3">
                                 <div v-if="res.fulfilled.length === 0" class="text-red-500 font-bold text-xs">Nenhuma cotação aprovada.</div>
                                 
-                                <div v-if="localFilter !== 'ALL' && localFilter !== 'BLANK'" class="text-[9.5px] text-blue-700 font-bold bg-blue-50 border border-blue-200 px-2 py-1 rounded mb-1.5 inline-block">
-                                    <i class="fa-solid fa-scale-balanced mr-1"></i> Mostrando rateio referente a {{res.displayQty}} un. (Lote original: {{res.item.qty}} un)
+                                <div v-if="localFilter !== 'ALL' && localFilter !== 'BLANK'" class="text-[9.5px] text-blue-700 font-bold bg-blue-50 border border-blue-200 px-2 py-1 rounded mb-2 inline-block">
+                                    <i class="fa-solid fa-scale-balanced mr-1"></i> Rateio ref. destino: {{localFilter}} (Lote Total: {{res.item.qty}} un)
                                 </div>
 
-                                <div class="flex flex-col gap-1.5">
-                                    <div v-for="(f, i) in res.fulfilled" :key="i" class="text-xs text-slate-700 bg-slate-50 p-2 border border-slate-200 rounded">
-                                        <span class="bg-slate-800 text-white font-bold px-1.5 py-0.5 rounded mr-1">
-                                            {{ Number.isInteger(f.qty) ? f.qty : f.qty.toFixed(2) }}x
-                                        </span>
-                                        <span class="font-bold text-blue-600 uppercase">{{ f.supplier }}</span> 
-                                        <span class="text-slate-500">({{ f.prazo === 0 ? 'Imediato' : f.prazo + ' dias' }})</span>
-                                        <span class="font-semibold text-slate-800 ml-1">@ {{ formatMoney(f.price) }}</span>
-                                        <div class="text-[10px] text-slate-400 font-medium mt-1" v-if="f.brand"><b>Ref:</b> {{ f.brand }}</div>
+                                <div class="flex flex-col gap-2">
+                                    <div v-for="(f, i) in res.fulfilled" :key="i" class="text-xs bg-white p-2 border border-slate-200 rounded shadow-sm">
+                                        
+                                        <!-- TOPO: QTD, FORNECEDOR, PREÇO -->
+                                        <div class="flex justify-between items-center mb-2 border-b border-slate-100 pb-1.5">
+                                            <div>
+                                                <span class="bg-slate-800 text-white font-bold px-1.5 py-0.5 rounded mr-1">
+                                                    {{ Number.isInteger(f.qty) ? f.qty : f.qty.toFixed(2) }}x
+                                                </span>
+                                                <span class="font-bold text-blue-600 uppercase">{{ f.supplier }}</span> 
+                                                <span class="text-slate-500 text-[10px] ml-1">({{ f.prazo === 0 ? 'Imediato' : f.prazo + ' dias' }})</span>
+                                            </div>
+                                            <div class="font-black text-slate-800 text-sm">
+                                                @ {{ formatMoney(f.price) }}
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- BASE: COMPARATIVO DE MARCAS -->
+                                        <div class="grid grid-cols-2 gap-2 text-[9px]">
+                                            <div class="bg-slate-50 border border-slate-200 rounded p-1">
+                                                <span class="text-slate-400 font-bold block uppercase mb-0.5"><i class="fa-solid fa-tag"></i> Solicitado</span>
+                                                <span class="font-bold text-slate-700 truncate block" :title="res.item.brand">{{ res.item.brand || 'QUALQUER' }}</span>
+                                            </div>
+                                            <div class="bg-blue-50 border border-blue-200 rounded p-1">
+                                                <span class="text-blue-500 font-bold block uppercase mb-0.5"><i class="fa-solid fa-box-open"></i> Ofertado</span>
+                                                <span class="font-bold text-blue-800 truncate block" :title="f.brand">{{ f.brand || 'NÃO INFORMADA' }}</span>
+                                            </div>
+                                        </div>
+
                                     </div>
                                 </div>
                                 <div v-if="res.unfulfilled > 0 && supplierFilter === 'ALL'" class="text-[10px] text-red-600 mt-1 font-bold bg-red-50 p-1 rounded inline-block border border-red-100">Faltam {{ Number.isInteger(res.unfulfilled) ? res.unfulfilled : res.unfulfilled.toFixed(2) }} unidades proporc.</div>
@@ -351,11 +384,11 @@
                                 <span v-else>-</span>
                             </td>
                             
-                            <td class="text-right font-black text-slate-900 text-base">{{ formatMoney(res.displayCost) }}</td>
+                            <td class="text-right font-black text-slate-900 text-base pr-3">{{ formatMoney(res.displayCost) }}</td>
                         </tr>
                         
                         <tr class="bg-slate-900 text-white font-black">
-                            <td :colspan="3 + displayLocals.length" class="p-4 text-right text-sm uppercase tracking-wider">CUSTO TOTAL PROJETADO NESTE FILTRO:</td>
+                            <td colspan="5" class="p-4 text-right text-sm uppercase tracking-wider">CUSTO TOTAL PROJETADO NESTE FILTRO:</td>
                             <td class="p-4 text-right text-lg text-emerald-400 font-black">{{ formatMoney(filteredGrandTotal) }}</td>
                         </tr>
                     </tbody>
@@ -366,7 +399,7 @@
 </div>
 
 <script>
-    // Conexão oficial do Firebase com o projeto compras-27554
+    // Conexão oficial do Firebase
     const firebaseConfig = {
         apiKey: "AIzaSyBGsRzQEEVBGKc2uxuy-5PR69i9QpLFqus",
         authDomain: "compras-27554.firebaseapp.com",
@@ -410,6 +443,21 @@
                     return [this.localFilter];
                 }
                 return this.uniqueLocals;
+            },
+            uniqueBrands() {
+                let brands = new Set();
+                this.items.forEach(i => {
+                    if(i.brand && i.brand.trim() !== '') brands.add(i.brand.trim().toUpperCase());
+                    if(i.offers) {
+                        Object.values(i.offers).forEach(o => {
+                            if(o.brand && o.brand.trim() !== '' && !o.brand.toUpperCase().includes("NÃO COTADO")) {
+                                let b = o.brand.split('|')[0].trim(); // Pega a marca antes do pipe se houver
+                                brands.add(b.toUpperCase());
+                            }
+                        });
+                    }
+                });
+                return Array.from(brands).sort();
             },
             uniqueLocals() {
                 let locals = new Set();
@@ -523,7 +571,7 @@
 
                             return newRes;
                         }
-                        return null; // Se não encontrou o local nesta linha
+                        return null; 
                     }
                 }).filter(res => res !== null);
 
@@ -558,6 +606,7 @@
                                     i.allocations.push({ local: i.local.trim().toUpperCase(), qty: i.qty });
                                 }
                             }
+                            if(i.brand === undefined) i.brand = '';
                         });
                         this.items = loadedItems;
 
@@ -650,7 +699,7 @@
                 }
             },
             addItem() {
-                const newItem = { id: '', desc: '', allocations: [], qty: 1, unid: 'UN', selected: true, offers: {} };
+                const newItem = { id: '', desc: '', brand: '', allocations: [], qty: 1, unid: 'UN', selected: true, offers: {} };
                 this.suppliers.forEach(sup => { newItem.offers[sup] = { price: null, stock: null, prazo: null, brand: '', active: true }; });
                 this.items.unshift(newItem); this.activeTab = 'materiais';
             },
@@ -685,11 +734,12 @@
                 }
                 this.isSyncing = true;
                 try {
-                    // Forçamos o Local ficar maiusculo antes de salvar
+                    // Forçamos o Local e Marca ficarem padronizados
                     this.items.forEach(i => {
                         if(i.allocations) {
                             i.allocations.forEach(a => { if(a.local) a.local = a.local.toUpperCase(); });
                         }
+                        if(i.brand) i.brand = i.brand.toUpperCase();
                     });
 
                     const docName = this.projectName.replace(/[^a-z0-9A-Z_]/gi, '_').toLowerCase();
@@ -728,6 +778,7 @@
                                 i.allocations = [];
                                 if(i.local && i.local.trim() !== '') i.allocations.push({ local: i.local.trim().toUpperCase(), qty: i.qty });
                             }
+                            if(i.brand === undefined) i.brand = '';
                         });
                         this.items = loadedItems;
                         
@@ -755,7 +806,7 @@
                 }
             },
             
-            // EXPORTAÇÃO EXCEL EM COLUNAS DINÂMICAS
+            // EXPORTAÇÃO EXCEL
             async exportExcel() {
                 if (!window.ExcelJS) { alert("A biblioteca ExcelJS não foi carregada."); return; }
                 this.isExporting = true;
@@ -763,7 +814,9 @@
                 try {
                     const wb = new ExcelJS.Workbook();
 
-                    // ABA 1: GERAL
+                    // =========================================================
+                    // PLANILHA 1: MODELO PADRÃO
+                    // =========================================================
                     const ws1 = wb.addWorksheet('Geral');
                     let max_sups_in_row = 0;
                     const toExport = this.filteredAnalysis.filter(a => a.item.selected);
@@ -772,10 +825,10 @@
 
                     let cols1 = [
                         { header: 'CÓD.', key: 'id', width: 12 },
-                        { header: 'DESCRIÇÃO DO MATERIAL', key: 'desc', width: 55 }
+                        { header: 'DESCRIÇÃO DO MATERIAL', key: 'desc', width: 55 },
+                        { header: 'MARCA REF.', key: 'ref_brand', width: 20 }
                     ];
 
-                    // COLUNAS DINÂMICAS DE DESTINO
                     this.displayLocals.forEach(loc => {
                         cols1.push({ header: `QTD: ${loc}`, key: `loc_${loc.replace(/\W/g, '')}`, width: 15 });
                     });
@@ -807,6 +860,7 @@
                         let rowData = { 
                             id: res.item.id, 
                             desc: res.item.desc, 
+                            ref_brand: res.item.brand || '-',
                             qty_req: res.displayQty, 
                             unid: res.item.unid, 
                             total_geral: res.displayCost 
@@ -844,12 +898,15 @@
                         });
                     });
 
-                    // ABA 2: RESUMO CONSOLIDADO
+                    // =========================================================
+                    // PLANILHA 2: RESUMO CONSOLIDADO
+                    // =========================================================
                     const ws2 = wb.addWorksheet('Resumo Consolidado');
                     
                     let cols2 = [
                         { header: 'ITEM', key: 'id', width: 10 },
-                        { header: 'DESCRIÇÃO DO MATERIAL', key: 'desc', width: 55 }
+                        { header: 'DESCRIÇÃO DO MATERIAL', key: 'desc', width: 55 },
+                        { header: 'MARCA REF.', key: 'ref_brand', width: 20 }
                     ];
                     
                     this.displayLocals.forEach(loc => {
@@ -866,7 +923,7 @@
                         { header: 'SUBTOTAL NO FORNECEDOR', key: 'subtotal', width: 22 },
                         { header: 'TOTAL DO MATERIAL', key: 'total_mat', width: 20 },
                         { header: 'STATUS DO MATERIAL', key: 'status', width: 35 },
-                        { header: 'MARCA / MODELO', key: 'brand', width: 45 }
+                        { header: 'MARCA / MODELO OFERTADA', key: 'brand', width: 45 }
                     );
 
                     ws2.columns = cols2;
@@ -889,6 +946,7 @@
                             let rData = {
                                 id: idx === 0 ? res.item.id : '',
                                 desc: idx === 0 ? res.item.desc : '',
+                                ref_brand: idx === 0 ? (res.item.brand || '-') : '',
                                 qty_req: idx === 0 ? res.displayQty : '',
                                 supplier: row.supplier,
                                 qtd_agora: row.qtd_agora,
@@ -912,7 +970,7 @@
                                 cell.border = { top: { style: 'thin'}, left: { style: 'thin'}, bottom: { style: 'thin'}, right: { style: 'thin'} };
                                 
                                 let colKey = ws2.getColumn(colN).key;
-                                if (colKey.startsWith('loc_') || colKey === 'qty_req' || colKey === 'qtd_agora' || colKey === 'qtd_enc' || colKey === 'prazo_enc' || colKey === 'supplier' || colKey === 'id') {
+                                if (colKey.startsWith('loc_') || colKey === 'qty_req' || colKey === 'qtd_agora' || colKey === 'qtd_enc' || colKey === 'prazo_enc' || colKey === 'supplier' || colKey === 'id' || colKey === 'ref_brand') {
                                     cell.alignment.horizontal = 'center';
                                 }
                                 if (colKey === 'price' || colKey === 'subtotal' || colKey === 'total_mat') {
@@ -929,8 +987,9 @@
                         // Merges de Células
                         ws2.mergeCells(`A${startRow}:A${endRow}`); // ID
                         ws2.mergeCells(`B${startRow}:B${endRow}`); // DESC
+                        ws2.mergeCells(`C${startRow}:C${endRow}`); // MARCA REF
                         
-                        let startColIdx = 3;
+                        let startColIdx = 4; // Locais start after ID, DESC, MARCA REF (which are cols 1,2,3)
                         this.displayLocals.forEach((loc, lIdx) => {
                             let colLetter = ws2.getColumn(startColIdx + lIdx).letter;
                             ws2.mergeCells(`${colLetter}${startRow}:${colLetter}${endRow}`);
@@ -946,14 +1005,15 @@
                         ws2.mergeCells(`${statusLetter}${startRow}:${statusLetter}${endRow}`);
                     });
 
-                    // ABAS 3+: PEDIDOS DOS FORNECEDORES (Com Colunas de Local)
+                    // ABAS 3+: PEDIDOS DOS FORNECEDORES
                     const winningSuppliers = [...new Set(toExport.flatMap(res => res.fulfilled.map(f => f.supplier)))];
                     for (let sup of winningSuppliers) {
                         const wsSup = wb.addWorksheet(`Pedido - ${sup}`);
                         
                         let colsSup = [
                             { header: 'CÓDIGO', key: 'id', width: 12 }, 
-                            { header: 'DESCRIÇÃO', key: 'desc', width: 60 }
+                            { header: 'DESCRIÇÃO', key: 'desc', width: 60 },
+                            { header: 'MARCA REF.', key: 'ref_brand', width: 20 }
                         ];
                         
                         this.displayLocals.forEach(loc => {
@@ -966,7 +1026,7 @@
                             { header: 'PRAZO', key: 'prazo', width: 15 }, 
                             { header: 'VALOR UNIT.', key: 'price', width: 18 },
                             { header: 'SUBTOTAL', key: 'subtotal', width: 20 }, 
-                            { header: 'MARCA/MODELO', key: 'brand', width: 45 }
+                            { header: 'MARCA/MODELO OFERTADA', key: 'brand', width: 45 }
                         );
                         
                         wsSup.columns = colsSup;
@@ -985,6 +1045,7 @@
                                 let rData = { 
                                     id: res.item.id, 
                                     desc: res.item.desc, 
+                                    ref_brand: res.item.brand || '-',
                                     qty: f.qty, 
                                     unid: res.item.unid, 
                                     prazo: f.prazo === 0 ? "Imediato" : `${f.prazo} Dias`, 
@@ -1004,7 +1065,7 @@
                                     let colKey = wsSup.getColumn(colN).key;
                                     cell.border = { top: { style: 'thin', color: { argb: 'CBD5E1' } }, bottom: { style: 'thin', color: { argb: 'CBD5E1' } } };
                                     cell.alignment = { vertical: 'middle' };
-                                    if (colKey.startsWith('loc_') || colKey === 'qty' || colKey === 'unid' || colKey === 'prazo') {
+                                    if (colKey.startsWith('loc_') || colKey === 'qty' || colKey === 'unid' || colKey === 'prazo' || colKey === 'ref_brand') {
                                         cell.alignment.horizontal = 'center';
                                     }
                                     if (colKey === 'price' || colKey === 'subtotal') {
